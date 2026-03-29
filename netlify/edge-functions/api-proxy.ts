@@ -1,0 +1,111 @@
+/**
+ * Netlify Edge Function Proxy
+ * This acts exactly like the vite.config.ts proxy, but for production deployment.
+ */
+import type { Context } from '@netlify/edge-functions';
+
+export default async (request: Request, context: Context) => {
+  const url = new URL(request.url);
+
+  try {
+    // Proxy for YouTube InnerTube API
+    if (url.pathname.startsWith('/ytapi/')) {
+      const targetPath = url.pathname.replace(/^\/ytapi/, '/youtubei/v1');
+      const targetUrl = `https://music.youtube.com${targetPath}${url.search}`;
+      
+      const headers = new Headers(request.headers);
+      headers.set('Origin', 'https://music.youtube.com');
+      headers.set('Referer', 'https://music.youtube.com/');
+      headers.delete('Host'); // Netlify automatically sets the correct host
+
+      const init: RequestInit = {
+        method: request.method,
+        headers,
+      };
+
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        init.body = await request.clone().blob();
+      }
+
+      const response = await fetch(targetUrl, init);
+      const clonedResponse = new Response(response.body, response);
+      clonedResponse.headers.set('Access-Control-Allow-Origin', '*');
+      return clonedResponse;
+    }
+
+    // Proxy for LrcLib API
+    if (url.pathname.startsWith('/lrclib/')) {
+      const targetPath = url.pathname.replace(/^\/lrclib/, '');
+      const targetUrl = `https://lrclib.net${targetPath}${url.search}`;
+      
+      const headers = new Headers(request.headers);
+      headers.delete('Host');
+
+      const init: RequestInit = {
+        method: request.method,
+        headers,
+      };
+
+      const response = await fetch(targetUrl, init);
+      const clonedResponse = new Response(response.body, response);
+      clonedResponse.headers.set('Access-Control-Allow-Origin', '*');
+      return clonedResponse;
+    }
+
+    // Multi-instance proxy for YT stream data (Invidious / Piped)
+    if (url.pathname.startsWith('/yt-proxy/')) {
+      const instances = [
+        'https://inv.nadeko.net',
+        'https://invidious.nerdvpn.de',
+        'https://invidious.jing.rocks',
+        'https://pipedapi.kavin.rocks',
+        'https://pipedapi.adminforge.de',
+      ];
+      
+      const targetPath = url.pathname.replace(/^\/yt-proxy/, '');
+      
+      for (const instance of instances) {
+        try {
+          const targetUrl = `${instance}${targetPath}${url.search}`;
+          const init: RequestInit = {
+            method: request.method,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Gecko/20100101 Firefox/128.0',
+              'Accept': 'application/json',
+            },
+          };
+          
+          const reqPromise = fetch(targetUrl, init);
+          // 8-second timeout abort
+          const res = await Promise.race([
+            reqPromise,
+            new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8000))
+          ]);
+          
+          if (res.ok) {
+            const body = await res.arrayBuffer();
+            const clonedResponse = new Response(body, {
+              status: res.status,
+              headers: {
+                'Content-Type': res.headers.get('content-type') || 'application/json',
+                'Access-Control-Allow-Origin': '*',
+              }
+            });
+            return clonedResponse;
+          }
+        } catch {
+          // ignore error and try next instance
+        }
+      }
+      
+      return new Response('All proxy instances failed', { status: 502 });
+    }
+
+    // Default passthrough if URL does not match any proxy rule
+    return;
+
+  } catch (error) {
+    console.error('Edge function proxy error:', error);
+    return new Response(String(error), { status: 500 });
+  }
+};
