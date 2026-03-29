@@ -120,6 +120,9 @@ function invidiousProxy(): Plugin {
 }
 
 export default defineConfig({
+  // Relative base so built assets resolve correctly when deployed to a
+  // GitHub Pages subdirectory (e.g. https://<user>.github.io/SpoTune/).
+  base: './',
   plugins: [audioStreamProxy(), invidiousProxy()],
   server: {
     proxy: {

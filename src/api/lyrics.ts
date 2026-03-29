@@ -5,6 +5,10 @@
 
 import type { LyricsResult } from './types';
 
+// lrclib.net natively supports CORS, so in production we call it directly.
+// In development the Vite dev-server proxy (/lrclib → lrclib.net) is used.
+const LRCLIB_BASE = import.meta.env.PROD ? 'https://lrclib.net' : '/lrclib';
+
 // ─── LrcLib ───
 
 interface LrcLibTrack {
@@ -30,7 +34,7 @@ export async function getLyrics(
     });
     if (album) params.set('album_name', album);
 
-    const res = await fetch(`/lrclib/api/search?${params}`);
+    const res = await fetch(`${LRCLIB_BASE}/api/search?${params}`);
     if (!res.ok) return null;
     const tracks: LrcLibTrack[] = await res.json();
 

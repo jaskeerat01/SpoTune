@@ -5,6 +5,11 @@
 
 import type { SongItem, AlbumItem, ArtistItem, PlaylistItem, HomeSection, YTItem } from './types';
 
+// In development the Vite dev-server proxy forwards /ytapi → music.youtube.com.
+// In production (GitHub Pages static build) there is no proxy, so we route
+// requests through a public CORS proxy instead.
+const YT_MUSIC_API = 'https://music.youtube.com/youtubei/v1';
+const CORS_PROXY   = 'https://corsproxy.io/';
 const API = '/ytapi';
 
 const WEB_REMIX = {
@@ -34,7 +39,12 @@ function defaultHeaders(): Record<string, string> {
 }
 
 async function ytPost(endpoint: string, body: Record<string, unknown>) {
-  const res = await fetch(`${API}/${endpoint}?prettyPrint=false`, {
+  // Build the target URL; in production route through the CORS proxy.
+  const targetUrl = import.meta.env.PROD
+    ? `${CORS_PROXY}?url=${encodeURIComponent(`${YT_MUSIC_API}/${endpoint}?prettyPrint=false`)}`
+    : `${API}/${endpoint}?prettyPrint=false`;
+
+  const res = await fetch(targetUrl, {
     method: 'POST',
     headers: defaultHeaders(),
     body: JSON.stringify({ context: makeContext(), ...body }),
