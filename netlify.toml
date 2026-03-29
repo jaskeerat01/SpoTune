@@ -1,0 +1,18 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[[edge_functions]]
+  path = "/ytapi/*"
+  function = "api-proxy"
+
+[[edge_functions]]
+  path = "/lrclib/*"
+  function = "api-proxy"
+
+[[edge_functions]]
+  path = "/yt-proxy/*"
+  function = "api-proxy"
+
+# The /audiostream proxy is no longer used since we switched to YT IFrame Player,
+# but if it's hit it will also be routed for safety.
