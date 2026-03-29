@@ -2,11 +2,23 @@
  * OpenTune Web – Main Application
  * Minimal resource footprint with vanilla TypeScript.
  */
-import './style.css';
-import { search, searchSuggestions, getHome, getNext } from './api/youtube';
-import { getLyrics } from './api/lyrics';
-import { initYTPlayer, loadVideo, play as ytPlay, pause as ytPause, seekTo, setVolume, getCurrentTime, getDuration, setOnStateChange, setOnError, STATE } from './api/player';
-import type { SongItem, YTItem, HomeSection, LyricsResult } from './api/types';
+import "./style.css";
+import { search, searchSuggestions, getHome, getNext } from "./api/youtube";
+import { getLyrics } from "./api/lyrics";
+import {
+  initYTPlayer,
+  loadVideo,
+  play as ytPlay,
+  pause as ytPause,
+  seekTo,
+  setVolume,
+  getCurrentTime,
+  getDuration,
+  setOnStateChange,
+  setOnError,
+  STATE,
+} from "./api/player";
+import type { SongItem, YTItem, HomeSection, LyricsResult } from "./api/types";
 
 // ─── State ───
 let currentSong: SongItem | null = null;
@@ -38,20 +50,26 @@ const icons = {
 
 // ─── Utils ───
 function formatTime(sec: number): string {
-  if (!isFinite(sec) || sec < 0) return '0:00';
+  if (!isFinite(sec) || sec < 0) return "0:00";
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
+  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 function isSong(item: YTItem): item is SongItem {
-  return 'id' in item && 'artists' in item && !('browseId' in item) && !('songCountText' in item);
+  return (
+    "id" in item &&
+    "artists" in item &&
+    !("browseId" in item) &&
+    !("songCountText" in item)
+  );
 }
 
 // ─── Render App Shell ───
 function renderApp() {
-  const app = document.getElementById('app')!;
+  const app = document.getElementById("app")!;
   app.innerHTML = `
+    <div class="backdrop" id="backdrop"></div>
     <nav class="sidebar">
       <div class="sidebar-logo">
         <div class="logo-icon">♫</div>
@@ -73,6 +91,13 @@ function renderApp() {
 
     <main class="main-content" id="main-content">
       <header class="content-header">
+        <button class="hamburger" id="hamburger-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
         <div class="search-container" id="search-container">
           <span class="search-icon">${icons.search}</span>
           <input class="search-input" id="search-input" type="text"
@@ -132,12 +157,22 @@ function renderApp() {
 
   bindEvents();
   loadHomePage();
+
+  document.getElementById("hamburger-btn")!.addEventListener("click", () => {
+    document.querySelector(".sidebar")!.classList.toggle("open");
+    document.querySelector(".backdrop")!.classList.toggle("active");
+  });
+
+  document.getElementById("backdrop")!.addEventListener("click", () => {
+    document.querySelector(".sidebar")!.classList.remove("open");
+    document.querySelector(".backdrop")!.classList.remove("active");
+  });
 }
 
 // ─── Page Rendering ───
 
 async function loadHomePage() {
-  const pc = document.getElementById('page-content')!;
+  const pc = document.getElementById("page-content")!;
   pc.innerHTML = `
     <div class="hero">
       <h1>Good ${getGreeting()} 🎵</h1>
@@ -169,13 +204,13 @@ async function loadHomePage() {
 
 function getGreeting(): string {
   const h = new Date().getHours();
-  if (h < 12) return 'Morning';
-  if (h < 18) return 'Afternoon';
-  return 'Evening';
+  if (h < 12) return "Morning";
+  if (h < 18) return "Afternoon";
+  return "Evening";
 }
 
 function renderHomeSections(sections: HomeSection[]) {
-  const pc = document.getElementById('page-content')!;
+  const pc = document.getElementById("page-content")!;
   let html = `
     <div class="hero">
       <h1>Good ${getGreeting()} 🎵</h1>
@@ -185,7 +220,7 @@ function renderHomeSections(sections: HomeSection[]) {
   for (const section of sections) {
     html += `<div class="section">
       <div class="section-title">${section.title}</div>
-      <div class="carousel">${section.items.map(item => renderCard(item)).join('')}</div>
+      <div class="carousel">${section.items.map((item) => renderCard(item)).join("")}</div>
     </div>`;
   }
   pc.innerHTML = html;
@@ -193,16 +228,24 @@ function renderHomeSections(sections: HomeSection[]) {
 }
 
 function renderCard(item: YTItem): string {
-  const thumb = ('thumbnail' in item ? item.thumbnail : '') || '';
-  const title = ('title' in item ? item.title : '') || '';
-  let subtitle = '';
-  if ('artists' in item && item.artists) {
-    subtitle = item.artists.map(a => a.name).join(', ');
-  } else if ('author' in item && item.author) {
+  const thumb = ("thumbnail" in item ? item.thumbnail : "") || "";
+  const title = ("title" in item ? item.title : "") || "";
+  let subtitle = "";
+  if ("artists" in item && item.artists) {
+    subtitle = item.artists.map((a) => a.name).join(", ");
+  } else if ("author" in item && item.author) {
     subtitle = item.author.name;
   }
-  const dataId = isSong(item) ? item.id : ('browseId' in item ? item.browseId : item.id);
-  const dataType = isSong(item) ? 'song' : ('browseId' in item ? 'album' : 'other');
+  const dataId = isSong(item)
+    ? item.id
+    : "browseId" in item
+      ? item.browseId
+      : item.id;
+  const dataType = isSong(item)
+    ? "song"
+    : "browseId" in item
+      ? "album"
+      : "other";
 
   return `<div class="card" data-id="${dataId}" data-type="${dataType}" style="position:relative">
     <img class="card-img" src="${thumb}" alt="${title}" loading="lazy" onerror="this.style.display='none'" />
@@ -210,12 +253,12 @@ function renderCard(item: YTItem): string {
       <div class="card-title" title="${title}">${title}</div>
       <div class="card-subtitle" title="${subtitle}">${subtitle}</div>
     </div>
-    ${dataType === 'song' ? `<div class="play-overlay">${icons.play}</div>` : ''}
+    ${dataType === "song" ? `<div class="play-overlay">${icons.play}</div>` : ""}
   </div>`;
 }
 
 async function performSearch(query: string) {
-  const pc = document.getElementById('page-content')!;
+  const pc = document.getElementById("page-content")!;
   pc.innerHTML = `
     <div class="search-results">
       <div class="search-results-title">Searching for "${query}"…</div>
@@ -245,7 +288,7 @@ async function performSearch(query: string) {
       <div class="search-results">
         <div class="search-results-title">Results for "${query}"</div>
         <div class="track-list">
-          ${songs.map((s, i) => renderTrackItem(s, i)).join('')}
+          ${songs.map((s, i) => renderTrackItem(s, i)).join("")}
         </div>
       </div>
     `;
@@ -267,9 +310,9 @@ async function performSearch(query: string) {
 }
 
 function renderTrackItem(song: SongItem, index: number): string {
-  const artists = song.artists?.map(a => a.name).join(', ') || '';
-  const album = song.album?.name || '';
-  const active = currentSong?.id === song.id ? 'active' : '';
+  const artists = song.artists?.map((a) => a.name).join(", ") || "";
+  const album = song.album?.name || "";
+  const active = currentSong?.id === song.id ? "active" : "";
   return `<div class="track-item ${active}" data-id="${song.id}" data-index="${index}">
     <span class="track-num">${index + 1}</span>
     <img class="track-thumb" src="${song.thumbnail}" alt="" loading="lazy" onerror="this.style.display='none'" />
@@ -278,7 +321,7 @@ function renderTrackItem(song: SongItem, index: number): string {
       <div class="track-artist">${artists}</div>
     </div>
     <span class="track-album">${album}</span>
-    <span class="track-duration">${song.durationText || ''}</span>
+    <span class="track-duration">${song.durationText || ""}</span>
   </div>`;
 }
 
@@ -289,7 +332,8 @@ async function playSong(song: SongItem) {
   updatePlayerUI();
 
   // Show loading state
-  document.getElementById('player-title')!.textContent = `Loading: ${song.title}…`;
+  document.getElementById("player-title")!.textContent =
+    `Loading: ${song.title}…`;
 
   try {
     // Initialize YT Player if needed
@@ -312,21 +356,26 @@ async function playSong(song: SongItem) {
           updatePlayButton();
           playNext();
         } else if (state === STATE.BUFFERING) {
-          document.getElementById('player-title')!.textContent = `Buffering: ${currentSong?.title || ''}…`;
+          document.getElementById("player-title")!.textContent =
+            `Buffering: ${currentSong?.title || ""}…`;
         }
       });
 
       setOnError((code) => {
-        console.error('YT Player error code:', code);
-        document.getElementById('player-title')!.textContent = `⚠ Could not play: ${currentSong?.title || ''}`;
-        document.getElementById('player-artist')!.textContent = `Error code: ${code}`;
+        console.error("YT Player error code:", code);
+        document.getElementById("player-title")!.textContent =
+          `⚠ Could not play: ${currentSong?.title || ""}`;
+        document.getElementById("player-artist")!.textContent =
+          `Error code: ${code}`;
         isPlaying = false;
         updatePlayButton();
       });
     }
 
     // Set volume
-    const vol = (document.getElementById('volume-slider') as HTMLInputElement)?.valueAsNumber || 80;
+    const vol =
+      (document.getElementById("volume-slider") as HTMLInputElement)
+        ?.valueAsNumber || 80;
     setVolume(vol);
 
     // Load and play the video
@@ -337,10 +386,10 @@ async function playSong(song: SongItem) {
 
     // Load queue if needed
     if (queue.length <= 1) {
-      getNext(song.id).then(items => {
+      getNext(song.id).then((items) => {
         if (items.length) {
           queue = items;
-          queueIndex = queue.findIndex(s => s.id === song.id);
+          queueIndex = queue.findIndex((s) => s.id === song.id);
           if (queueIndex === -1) {
             queue.unshift(song);
             queueIndex = 0;
@@ -348,12 +397,15 @@ async function playSong(song: SongItem) {
         }
       });
     } else {
-      queueIndex = queue.findIndex(s => s.id === song.id);
+      queueIndex = queue.findIndex((s) => s.id === song.id);
     }
   } catch (e) {
-    console.error('Playback error:', e);
-    document.getElementById('player-title')!.textContent = `⚠ Could not play: ${song.title}`;
-    document.getElementById('player-artist')!.textContent = String(e instanceof Error ? e.message : 'Unknown error');
+    console.error("Playback error:", e);
+    document.getElementById("player-title")!.textContent =
+      `⚠ Could not play: ${song.title}`;
+    document.getElementById("player-artist")!.textContent = String(
+      e instanceof Error ? e.message : "Unknown error",
+    );
     isPlaying = false;
     updatePlayButton();
   }
@@ -386,21 +438,24 @@ function playPrev() {
 
 function updatePlayerUI() {
   if (!currentSong) return;
-  const thumb = document.getElementById('player-thumb') as HTMLImageElement;
-  const title = document.getElementById('player-title')!;
-  const artist = document.getElementById('player-artist')!;
+  const thumb = document.getElementById("player-thumb") as HTMLImageElement;
+  const title = document.getElementById("player-title")!;
+  const artist = document.getElementById("player-artist")!;
   thumb.src = currentSong.thumbnail;
   title.textContent = currentSong.title;
-  artist.textContent = currentSong.artists?.map(a => a.name).join(', ') || '';
+  artist.textContent = currentSong.artists?.map((a) => a.name).join(", ") || "";
 
   // Highlight active track in list
-  document.querySelectorAll('.track-item').forEach(el => {
-    el.classList.toggle('active', el.getAttribute('data-id') === currentSong?.id);
+  document.querySelectorAll(".track-item").forEach((el) => {
+    el.classList.toggle(
+      "active",
+      el.getAttribute("data-id") === currentSong?.id,
+    );
   });
 }
 
 function updatePlayButton() {
-  const btn = document.getElementById('btn-play')!;
+  const btn = document.getElementById("btn-play")!;
   btn.innerHTML = isPlaying ? icons.pause : icons.play;
 }
 
@@ -410,10 +465,11 @@ function startProgressTracking() {
     if (!ytPlayerReady) return;
     const cur = getCurrentTime();
     const dur = getDuration();
-    document.getElementById('time-current')!.textContent = formatTime(cur);
-    document.getElementById('time-total')!.textContent = formatTime(dur);
+    document.getElementById("time-current")!.textContent = formatTime(cur);
+    document.getElementById("time-total")!.textContent = formatTime(dur);
     const pct = dur > 0 ? (cur / dur) * 100 : 0;
-    (document.getElementById('progress-fill') as HTMLElement).style.width = `${pct}%`;
+    (document.getElementById("progress-fill") as HTMLElement).style.width =
+      `${pct}%`;
 
     // Update active lyrics line
     if (lyricsOpen && lyricsData?.synced && lyricsData.sentences) {
@@ -425,10 +481,10 @@ function startProgressTracking() {
 // ─── Lyrics ───
 
 async function loadLyrics(song: SongItem) {
-  const body = document.getElementById('lyrics-body')!;
+  const body = document.getElementById("lyrics-body")!;
   body.innerHTML = `<div style="display:flex;justify-content:center;padding:40px"><div class="loading-spinner"></div></div>`;
 
-  const artist = song.artists?.[0]?.name || '';
+  const artist = song.artists?.[0]?.name || "";
   const dur = getDuration() ? Math.round(getDuration()) : 0;
   lyricsData = await getLyrics(song.title, artist, dur, song.album?.name);
 
@@ -438,93 +494,106 @@ async function loadLyrics(song: SongItem) {
   }
 
   if (lyricsData.synced && lyricsData.sentences) {
-    const entries = Array.from(lyricsData.sentences.entries()).sort((a, b) => a[0] - b[0]);
-    body.innerHTML = entries.map(([ts, text]) =>
-      `<div class="lyrics-line" data-ts="${ts}">${text || '♫'}</div>`
-    ).join('');
+    const entries = Array.from(lyricsData.sentences.entries()).sort(
+      (a, b) => a[0] - b[0],
+    );
+    body.innerHTML = entries
+      .map(
+        ([ts, text]) =>
+          `<div class="lyrics-line" data-ts="${ts}">${text || "♫"}</div>`,
+      )
+      .join("");
   } else {
-    body.innerHTML = lyricsData.text.split('\n').map(line =>
-      `<div class="lyrics-line">${line || '&nbsp;'}</div>`
-    ).join('');
+    body.innerHTML = lyricsData.text
+      .split("\n")
+      .map((line) => `<div class="lyrics-line">${line || "&nbsp;"}</div>`)
+      .join("");
   }
 }
 
 function updateActiveLyricLine(currentMs: number) {
-  const lines = document.querySelectorAll('.lyrics-line[data-ts]');
+  const lines = document.querySelectorAll(".lyrics-line[data-ts]");
   let activeEl: Element | null = null;
-  lines.forEach(el => {
-    const ts = Number(el.getAttribute('data-ts'));
+  lines.forEach((el) => {
+    const ts = Number(el.getAttribute("data-ts"));
     if (ts <= currentMs) activeEl = el;
-    el.classList.remove('active');
+    el.classList.remove("active");
   });
   if (activeEl) {
-    (activeEl as HTMLElement).classList.add('active');
-    (activeEl as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+    (activeEl as HTMLElement).classList.add("active");
+    (activeEl as HTMLElement).scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
   }
 }
 
 function toggleLyrics() {
   lyricsOpen = !lyricsOpen;
-  document.getElementById('lyrics-panel')!.classList.toggle('open', lyricsOpen);
-  document.getElementById('btn-lyrics')!.classList.toggle('active', lyricsOpen);
+  document.getElementById("lyrics-panel")!.classList.toggle("open", lyricsOpen);
+  document.getElementById("btn-lyrics")!.classList.toggle("active", lyricsOpen);
 }
 
 // ─── Event Binding ───
 
 function bindEvents() {
   // Search
-  const searchInput = document.getElementById('search-input') as HTMLInputElement;
-  const suggestionsEl = document.getElementById('suggestions')!;
+  const searchInput = document.getElementById(
+    "search-input",
+  ) as HTMLInputElement;
+  const suggestionsEl = document.getElementById("suggestions")!;
 
-  searchInput.addEventListener('input', () => {
+  searchInput.addEventListener("input", () => {
     const q = searchInput.value.trim();
     if (searchDebounce) clearTimeout(searchDebounce);
     if (!q) {
-      suggestionsEl.classList.remove('visible');
+      suggestionsEl.classList.remove("visible");
       return;
     }
     searchDebounce = setTimeout(async () => {
       const suggs = await searchSuggestions(q);
       if (suggs.length) {
-        suggestionsEl.innerHTML = suggs.map(s => `<div class="suggestion-item">${s}</div>`).join('');
-        suggestionsEl.classList.add('visible');
-        suggestionsEl.querySelectorAll('.suggestion-item').forEach(el => {
-          el.addEventListener('click', () => {
-            searchInput.value = el.textContent || '';
-            suggestionsEl.classList.remove('visible');
-            performSearch(el.textContent || '');
+        suggestionsEl.innerHTML = suggs
+          .map((s) => `<div class="suggestion-item">${s}</div>`)
+          .join("");
+        suggestionsEl.classList.add("visible");
+        suggestionsEl.querySelectorAll(".suggestion-item").forEach((el) => {
+          el.addEventListener("click", () => {
+            searchInput.value = el.textContent || "";
+            suggestionsEl.classList.remove("visible");
+            performSearch(el.textContent || "");
           });
         });
       } else {
-        suggestionsEl.classList.remove('visible');
+        suggestionsEl.classList.remove("visible");
       }
     }, 300);
   });
 
-  searchInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      suggestionsEl.classList.remove('visible');
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      suggestionsEl.classList.remove("visible");
       const q = searchInput.value.trim();
       if (q) performSearch(q);
     }
   });
 
-  searchInput.addEventListener('blur', () => {
-    setTimeout(() => suggestionsEl.classList.remove('visible'), 200);
+  searchInput.addEventListener("blur", () => {
+    setTimeout(() => suggestionsEl.classList.remove("visible"), 200);
   });
 
   // Player controls
-  document.getElementById('btn-play')!.addEventListener('click', togglePlay);
-  document.getElementById('btn-next')!.addEventListener('click', playNext);
-  document.getElementById('btn-prev')!.addEventListener('click', playPrev);
+  document.getElementById("btn-play")!.addEventListener("click", togglePlay);
+  document.getElementById("btn-next")!.addEventListener("click", playNext);
+  document.getElementById("btn-prev")!.addEventListener("click", playPrev);
 
   // Volume
-  document.getElementById('volume-slider')!.addEventListener('input', (e) => {
+  document.getElementById("volume-slider")!.addEventListener("input", (e) => {
     setVolume((e.target as HTMLInputElement).valueAsNumber);
   });
 
   // Progress bar seeking
-  document.getElementById('progress-bar')!.addEventListener('click', (e) => {
+  document.getElementById("progress-bar")!.addEventListener("click", (e) => {
     const dur = getDuration();
     if (!dur) return;
     const bar = e.currentTarget as HTMLElement;
@@ -534,43 +603,55 @@ function bindEvents() {
   });
 
   // Lyrics
-  document.getElementById('btn-lyrics')!.addEventListener('click', toggleLyrics);
-  document.getElementById('lyrics-close')!.addEventListener('click', toggleLyrics);
+  document
+    .getElementById("btn-lyrics")!
+    .addEventListener("click", toggleLyrics);
+  document
+    .getElementById("lyrics-close")!
+    .addEventListener("click", toggleLyrics);
 
   // Navigation
-  document.querySelectorAll('.nav-item').forEach(el => {
-    el.addEventListener('click', () => {
-      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-      el.classList.add('active');
-      const page = el.getAttribute('data-page');
-      if (page === 'home') loadHomePage();
-      if (page === 'search') {
-        const searchInput = document.getElementById('search-input') as HTMLInputElement;
+  document.querySelectorAll(".nav-item").forEach((el) => {
+    el.addEventListener("click", () => {
+      document
+        .querySelectorAll(".nav-item")
+        .forEach((n) => n.classList.remove("active"));
+      el.classList.add("active");
+      const page = el.getAttribute("data-page");
+      if (page === "home") loadHomePage();
+      if (page === "search") {
+        const searchInput = document.getElementById(
+          "search-input",
+        ) as HTMLInputElement;
         searchInput.focus();
       }
-      if (page === 'explore') loadHomePage(); // Explore reuses home feed for now
+      if (page === "explore") loadHomePage(); // Explore reuses home feed for now
     });
   });
 
   // Keyboard shortcuts
-  document.addEventListener('keydown', (e) => {
-    if ((e.target as HTMLElement).tagName === 'INPUT') return;
-    if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
-    if (e.code === 'ArrowRight' && e.ctrlKey) playNext();
-    if (e.code === 'ArrowLeft' && e.ctrlKey) playPrev();
+  document.addEventListener("keydown", (e) => {
+    if ((e.target as HTMLElement).tagName === "INPUT") return;
+    if (e.code === "Space") {
+      e.preventDefault();
+      togglePlay();
+    }
+    if (e.code === "ArrowRight" && e.ctrlKey) playNext();
+    if (e.code === "ArrowLeft" && e.ctrlKey) playPrev();
   });
 }
 
 function bindCardClicks() {
-  document.querySelectorAll('.card[data-type="song"]').forEach(el => {
-    el.addEventListener('click', () => {
-      const id = el.getAttribute('data-id');
+  document.querySelectorAll('.card[data-type="song"]').forEach((el) => {
+    el.addEventListener("click", () => {
+      const id = el.getAttribute("data-id");
       // Find the song in the current sections
-      const thumb = (el.querySelector('.card-img') as HTMLImageElement)?.src || '';
-      const title = el.querySelector('.card-title')?.textContent || '';
-      const subtitle = el.querySelector('.card-subtitle')?.textContent || '';
+      const thumb =
+        (el.querySelector(".card-img") as HTMLImageElement)?.src || "";
+      const title = el.querySelector(".card-title")?.textContent || "";
+      const subtitle = el.querySelector(".card-subtitle")?.textContent || "";
       const song: SongItem = {
-        id: id || '',
+        id: id || "",
         title,
         artists: [{ name: subtitle }],
         thumbnail: thumb,
@@ -583,9 +664,9 @@ function bindCardClicks() {
 }
 
 function bindTrackClicks() {
-  document.querySelectorAll('.track-item').forEach(el => {
-    el.addEventListener('click', () => {
-      const idx = Number(el.getAttribute('data-index'));
+  document.querySelectorAll(".track-item").forEach((el) => {
+    el.addEventListener("click", () => {
+      const idx = Number(el.getAttribute("data-index"));
       if (queue[idx]) {
         queueIndex = idx;
         playSong(queue[idx]);
