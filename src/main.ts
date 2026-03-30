@@ -1,9 +1,9 @@
 /**
- * OpenTune Web – Main Application
+ * SpoTune Web – Main Application
  * Minimal resource footprint with vanilla TypeScript.
  */
 import "./style.css";
-import { search, searchSuggestions, getHome, getNext } from "./api/youtube";
+import { search, searchSuggestions, getHome, getNext, getBrowseDetails } from "./api/youtube";
 import { getLyrics } from "./api/lyrics";
 import {
   initYTPlayer,
@@ -48,6 +48,25 @@ const icons = {
   repeat: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>`,
 };
 
+// ─── Skeleton Helpers ───
+function skeletonCards(count: number): string {
+  return Array(count).fill(`<div class="skeleton-card">
+    <div class="skeleton skeleton-img"></div>
+    <div class="skeleton skeleton-text"></div>
+    <div class="skeleton skeleton-text-sm"></div>
+  </div>`).join('');
+}
+
+function skeletonTracks(count: number): string {
+  return Array(count).fill(`<div class="skeleton-track">
+    <div class="skeleton skeleton-thumb"></div>
+    <div class="skeleton-lines">
+      <div class="skeleton skeleton-line"></div>
+      <div class="skeleton skeleton-line"></div>
+    </div>
+  </div>`).join('');
+}
+
 // ─── Utils ───
 function formatTime(sec: number): string {
   if (!isFinite(sec) || sec < 0) return "0:00";
@@ -73,7 +92,7 @@ function renderApp() {
     <nav class="sidebar">
       <div class="sidebar-logo">
         <div class="logo-icon">♫</div>
-        <span class="logo-text">OpenTune</span>
+        <span class="logo-text">SpoTune</span>
       </div>
       <div class="nav-section">
         <div class="nav-section-title">Menu</div>
@@ -98,6 +117,7 @@ function renderApp() {
             <line x1="3" y1="18" x2="21" y2="18" />
           </svg>
         </button>
+        <span class="mobile-logo">♫ SpoTune</span>
         <div class="search-container" id="search-container">
           <span class="search-icon">${icons.search}</span>
           <input class="search-input" id="search-input" type="text"
@@ -173,26 +193,49 @@ function renderApp() {
 
 async function loadHomePage() {
   const pc = document.getElementById("page-content")!;
+  pc.className = "animate-fade-in";
+  
+  const recArtists = getRecommendedArtists();
+  const recSections: HomeSection[] = [];
+  
   pc.innerHTML = `
     <div class="hero">
-      <h1>Good ${getGreeting()} 🎵</h1>
-      <p>Discover music, powered by OpenTune</p>
+      <h1>Good ${getGreeting()}</h1>
+      <p>Discover music, powered by SpoTune</p>
     </div>
     <div class="section">
-      <div style="display:flex;justify-content:center;padding:40px">
-        <div class="loading-spinner"></div>
-      </div>
+      <div class="skeleton-text skeleton" style="height:20px;width:120px;margin-bottom:16px;border-radius:4px"></div>
+      <div class="carousel">${skeletonCards(8)}</div>
+    </div>
+    <div class="section">
+      <div class="skeleton-text skeleton" style="height:20px;width:160px;margin-bottom:16px;border-radius:4px"></div>
+      <div class="carousel">${skeletonCards(8)}</div>
     </div>
   `;
 
   try {
-    const sections = await getHome();
-    renderHomeSections(sections);
+    // Fetch home sections and recommended artists concurrently
+    const [sections, ...recResults] = await Promise.all([
+      getHome(),
+      ...recArtists.map(artist => search(artist).catch(() => [] as YTItem[]))
+    ]);
+
+    recArtists.forEach((artist, i) => {
+      const results = recResults[i];
+      if (results && results.length > 0) {
+        recSections.push({
+          title: `More from ${artist}`,
+          items: results.slice(0, 8)
+        });
+      }
+    });
+
+    renderHomeSections([...recSections, ...sections]);
   } catch {
     pc.innerHTML = `
       <div class="hero">
-        <h1>Good ${getGreeting()} 🎵</h1>
-        <p>Discover music, powered by OpenTune</p>
+        <h1>Good ${getGreeting()}</h1>
+        <p>Discover music, powered by SpoTune</p>
       </div>
       <div class="empty-state">
         <div class="empty-icon">📡</div>
@@ -213,21 +256,21 @@ function renderHomeSections(sections: HomeSection[]) {
   const pc = document.getElementById("page-content")!;
   let html = `
     <div class="hero">
-      <h1>Good ${getGreeting()} 🎵</h1>
-      <p>Discover music, powered by OpenTune</p>
+      <h1>Good ${getGreeting()}</h1>
+      <p>Discover music, powered by SpoTune</p>
     </div>
   `;
   for (const section of sections) {
     html += `<div class="section">
       <div class="section-title">${section.title}</div>
-      <div class="carousel">${section.items.map((item) => renderCard(item)).join("")}</div>
+      <div class="carousel">${section.items.map((item, i) => renderCard(item, i)).join("")}</div>
     </div>`;
   }
   pc.innerHTML = html;
   bindCardClicks();
 }
 
-function renderCard(item: YTItem): string {
+function renderCard(item: YTItem, index: number = 0): string {
   const thumb = ("thumbnail" in item ? item.thumbnail : "") || "";
   const title = ("title" in item ? item.title : "") || "";
   let subtitle = "";
@@ -245,15 +288,17 @@ function renderCard(item: YTItem): string {
     ? "song"
     : "browseId" in item
       ? "album"
-      : "other";
+      : "playlist"; // Treat other as playlist
 
-  return `<div class="card" data-id="${dataId}" data-type="${dataType}" style="position:relative">
-    <img class="card-img" src="${thumb}" alt="${title}" loading="lazy" onerror="this.style.display='none'" />
+  return `<div class="card animate-slide-up" data-id="${dataId}" data-type="${dataType}" style="position:relative; animation-delay: ${index * 0.05}s">
+    <div class="card-img-wrapper">
+      <img class="card-img" src="${thumb}" alt="${title}" loading="lazy" onerror="this.style.display='none'" />
+      ${dataType === "song" ? `<div class="play-overlay">${icons.play}</div>` : `<div class="play-overlay" style="background:var(--accent-light); color:#000;">${icons.explore}</div>`}
+    </div>
     <div class="card-body">
       <div class="card-title" title="${title}">${title}</div>
       <div class="card-subtitle" title="${subtitle}">${subtitle}</div>
     </div>
-    ${dataType === "song" ? `<div class="play-overlay">${icons.play}</div>` : ""}
   </div>`;
 }
 
@@ -262,9 +307,7 @@ async function performSearch(query: string) {
   pc.innerHTML = `
     <div class="search-results">
       <div class="search-results-title">Searching for "${query}"…</div>
-      <div style="display:flex;justify-content:center;padding:40px">
-        <div class="loading-spinner"></div>
-      </div>
+      ${skeletonTracks(6)}
     </div>
   `;
 
@@ -315,6 +358,7 @@ function renderTrackItem(song: SongItem, index: number): string {
   const active = currentSong?.id === song.id ? "active" : "";
   return `<div class="track-item ${active}" data-id="${song.id}" data-index="${index}">
     <span class="track-num">${index + 1}</span>
+    <span class="play-icon-hover">${icons.play}</span>
     <img class="track-thumb" src="${song.thumbnail}" alt="" loading="lazy" onerror="this.style.display='none'" />
     <div class="track-info">
       <div class="track-title">${song.title}</div>
@@ -380,6 +424,7 @@ async function playSong(song: SongItem) {
 
     // Load and play the video
     loadVideo(song.id);
+    saveToPreferences(song);
 
     // Load lyrics in background
     setTimeout(() => loadLyrics(song), 1000);
@@ -642,25 +687,91 @@ function bindEvents() {
 }
 
 function bindCardClicks() {
-  document.querySelectorAll('.card[data-type="song"]').forEach((el) => {
-    el.addEventListener("click", () => {
-      const id = el.getAttribute("data-id");
-      // Find the song in the current sections
-      const thumb =
-        (el.querySelector(".card-img") as HTMLImageElement)?.src || "";
-      const title = el.querySelector(".card-title")?.textContent || "";
-      const subtitle = el.querySelector(".card-subtitle")?.textContent || "";
-      const song: SongItem = {
-        id: id || "",
-        title,
-        artists: [{ name: subtitle }],
-        thumbnail: thumb,
-      };
-      queue = [song];
-      queueIndex = 0;
-      playSong(song);
+  document.querySelectorAll(".card").forEach((el) => {
+    el.addEventListener("click", async () => {
+      const id = el.getAttribute("data-id") || "";
+      const type = el.getAttribute("data-type");
+
+      if (type === "song") {
+        const thumb = (el.querySelector(".card-img") as HTMLImageElement)?.src || "";
+        const title = el.querySelector(".card-title")?.textContent || "";
+        const subtitle = el.querySelector(".card-subtitle")?.textContent || "";
+        const song: SongItem = {
+          id,
+          title,
+          artists: [{ name: subtitle }],
+          thumbnail: thumb,
+        };
+        queue = [song];
+        queueIndex = 0;
+        playSong(song);
+      } else {
+        loadBrowsePage(id);
+      }
     });
   });
+}
+
+async function loadBrowsePage(browseId: string) {
+  const pc = document.getElementById("page-content")!;
+  pc.className = "animate-fade-in";
+  pc.innerHTML = `
+    <div class="search-results">
+      <div class="search-results-title">Loading...</div>
+      ${skeletonTracks(8)}
+    </div>
+  `;
+
+  try {
+    const { title, items } = await getBrowseDetails(browseId);
+    pc.innerHTML = `
+      <div class="search-results">
+        <div style="display:flex; align-items:center; gap:16px; margin-bottom: 24px;">
+           <button class="player-btn" id="btn-back" style="background:var(--bg-card); padding: 8px;">${icons.skipBack}</button>
+           <div class="search-results-title" style="margin-bottom:0">${title}</div>
+        </div>
+        <div class="track-list">
+          ${items.map((s, i) => renderTrackItem(s, i)).join("")}
+        </div>
+      </div>
+    `;
+
+    document.getElementById("btn-back")?.addEventListener("click", () => loadHomePage());
+
+    queue = items;
+    bindTrackClicks();
+  } catch (e) {
+    pc.innerHTML = `<div class="empty-state"><div class="empty-text">Failed to load content.</div></div>`;
+  }
+}
+
+// ─── Preference Caching ───
+const PREF_KEY = "spotune_prefs";
+
+function saveToPreferences(song: SongItem) {
+  try {
+    const prefs = JSON.parse(localStorage.getItem(PREF_KEY) || "[]");
+    const artist = song.artists?.[0]?.name;
+    if (!artist) return;
+
+    const newPref = { artist, timestamp: Date.now() };
+    const filtered = prefs.filter((p: any) => p.artist !== artist);
+    filtered.unshift(newPref);
+    
+    // Keep last 20 unique artists for better profile building
+    localStorage.setItem(PREF_KEY, JSON.stringify(filtered.slice(0, 20)));
+  } catch (e) {
+    console.error("Error saving preferences:", e);
+  }
+}
+
+function getRecommendedArtists(): string[] {
+  try {
+    const prefs = JSON.parse(localStorage.getItem(PREF_KEY) || "[]");
+    return prefs.map((p: any) => p.artist).slice(0, 3); // Get up to 3 artists
+  } catch {
+    return [];
+  }
 }
 
 function bindTrackClicks() {
