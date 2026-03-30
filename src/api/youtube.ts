@@ -60,10 +60,19 @@ function fixThumbUrl(url: string): string {
 
 function parseSong(renderer: any): SongItem | null {
   try {
-    const cols = renderer.flexColumns;
-    const title = cols?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0]?.text;
-    const artistRuns = cols?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
-    const albumRuns = cols?.[2]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
+    const cols = renderer.flexColumns || [];
+    // Titles can be in col 0 or 1 depending on whether it's a playlist or search
+    const col0Text = cols?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0]?.text;
+    let title = col0Text;
+    let artistRuns = cols?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
+    let albumRuns = cols?.[2]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
+
+    // If col 0 is empty (e.g. some track number formats), shift by 1
+    if (!title && cols[1]) {
+      title = cols?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0]?.text;
+      artistRuns = cols?.[2]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
+      albumRuns = cols?.[3]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [];
+    }
 
     const id = renderer.overlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer
       ?.playNavigationEndpoint?.watchEndpoint?.videoId
@@ -73,7 +82,9 @@ function parseSong(renderer: any): SongItem | null {
     if (!id || !title) return null;
 
     const thumb = fixThumbUrl(bestThumb(renderer.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails));
-    const durationText = cols?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.slice(-1)?.[0]?.text;
+    // Pluck the last item of whatever is artists column text, if it looks like a duration
+    const potDur = artistRuns.slice(-1)?.[0]?.text || '';
+    const durationText = potDur.includes(':') ? potDur : '';
 
     return {
       id,
@@ -358,4 +369,72 @@ export async function getNext(videoId: string, playlistId?: string): Promise<Son
       return { id, title, artists: [{ name: artistText }], thumbnail: thumb, durationText: durText } as SongItem;
     })
     .filter(Boolean) as SongItem[];
+}
+
+export async function getBrowseDetails(browseId: string): Promise<{ title: string; items: SongItem[] }> {
+  try {
+    const data = await ytPost('browse', { browseId });
+    
+    // Extract title from various header types
+    const title = 
+      data?.header?.musicDetailHeaderRenderer?.title?.runs?.[0]?.text
+      || data?.header?.musicEditablePlaylistDetailHeaderRenderer?.header?.musicPlaylistEditHeaderRenderer?.title?.runs?.[0]?.text
+      || data?.header?.musicImmersiveHeaderRenderer?.title?.runs?.[0]?.text
+      || data?.header?.musicVisualHeaderRenderer?.title?.runs?.[0]?.text
+      || 'Playlist';
+    
+    const items: SongItem[] = [];
+    
+    // Strategy 1: singleColumnBrowseResultsRenderer (albums, some playlists)
+    const singleTabs = data?.contents?.singleColumnBrowseResultsRenderer?.tabs;
+    if (singleTabs) {
+      const sectionContents = singleTabs[0]?.tabRenderer?.content?.sectionListRenderer?.contents || [];
+      for (const section of sectionContents) {
+        extractSongsFromSection(section, items);
+      }
+    }
+    
+    // Strategy 2: twoColumnBrowseResultsRenderer (community playlists)
+    const twoCol = data?.contents?.twoColumnBrowseResultsRenderer;
+    if (twoCol) {
+      // Check tabs
+      const tabContents = twoCol.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer?.contents || [];
+      for (const section of tabContents) {
+        extractSongsFromSection(section, items);
+      }
+      // Check secondaryContents (common for playlists)
+      const secContents = twoCol.secondaryContents?.sectionListRenderer?.contents || [];
+      for (const section of secContents) {
+        extractSongsFromSection(section, items);
+      }
+      // Direct musicPlaylistShelfRenderer under secondaryContents
+      const directShelf = twoCol.secondaryContents?.musicPlaylistShelfRenderer?.contents || [];
+      for (const c of directShelf) {
+        if (c.musicResponsiveListItemRenderer) {
+          const song = parseSong(c.musicResponsiveListItemRenderer);
+          if (song) items.push(song);
+        }
+      }
+    }
+    
+    return { title, items };
+  } catch (e) {
+    console.error('Failed to get browse details:', e);
+    return { title: 'Error', items: [] };
+  }
+}
+
+/** Recursively extract songs from a section renderer */
+function extractSongsFromSection(section: any, items: SongItem[]) {
+  const shelfContents = 
+    section.musicShelfRenderer?.contents 
+    || section.musicPlaylistShelfRenderer?.contents 
+    || [];
+  
+  for (const c of shelfContents) {
+    if (c.musicResponsiveListItemRenderer) {
+      const song = parseSong(c.musicResponsiveListItemRenderer);
+      if (song) items.push(song);
+    }
+  }
 }
