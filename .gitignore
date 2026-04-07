@@ -24,3 +24,7 @@ Thumbs.db
 
 # Vite
 .vite/
+
+# Source maps (YOUR private debugging key — never push these)
+*.map
+dist/**/*.map
