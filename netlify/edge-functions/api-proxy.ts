@@ -101,6 +101,36 @@ export default async (request: Request, context: Context) => {
       return new Response('All proxy instances failed', { status: 502 });
     }
 
+    // Audio download proxy — streams remote audio with download headers
+    if (url.pathname.startsWith('/dl-proxy')) {
+      const targetUrl = url.searchParams.get('url');
+      const fileName = url.searchParams.get('name') || 'audio';
+      if (!targetUrl) return new Response('Missing url parameter', { status: 400 });
+
+      try {
+        const res = await fetch(targetUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Gecko/20100101 Firefox/128.0',
+          },
+        });
+        if (!res.ok) return new Response('Upstream error', { status: res.status });
+
+        const contentType = res.headers.get('content-type') || 'audio/mp4';
+        const ext = contentType.includes('webm') ? 'webm' : contentType.includes('ogg') ? 'ogg' : 'm4a';
+        const headers: Record<string, string> = {
+          'Content-Type': contentType,
+          'Content-Disposition': `attachment; filename="${fileName}.${ext}"`,
+          'Access-Control-Allow-Origin': '*',
+        };
+        const cl = res.headers.get('content-length');
+        if (cl) headers['Content-Length'] = cl;
+
+        return new Response(res.body, { status: 200, headers });
+      } catch (e) {
+        return new Response('Download proxy error: ' + String(e), { status: 502 });
+      }
+    }
+
     // Default passthrough if URL does not match any proxy rule
     return;
 

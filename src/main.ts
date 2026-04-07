@@ -5,6 +5,7 @@ import {
   getHome,
   getNext,
   getBrowseDetails,
+  getDownloadUrl,
 } from "./api/youtube";
 import { getLyrics } from "./api/lyrics";
 import {
@@ -32,6 +33,7 @@ let lyricsData: LyricsResult | null = null;
 let lyricsOpen = false;
 let searchDebounce: ReturnType<typeof setTimeout> | null = null;
 let progressInterval: ReturnType<typeof setInterval> | null = null;
+let isDownloading = false;
 
 // ─── Utils ───
 function formatTime(sec: number): string {
@@ -97,6 +99,7 @@ function renderApp() {
             <button id="st-btn-next" class="sp-ctrl-btn" aria-label="Next"><span class="material-symbols-outlined">skip_next</span></button>
         </div>
         <div class="sp-player-extra">
+            <button id="btn-download" class="sp-ctrl-btn" aria-label="Download" title="Download (128kbps)"><span class="material-symbols-outlined">download</span></button>
             <button id="btn-lyrics" class="sp-ctrl-btn" aria-label="Lyrics"><span class="material-symbols-outlined">lyrics</span></button>
             <div class="sp-volume-wrap">
                 <span class="material-symbols-outlined sp-vol-icon">volume_up</span>
@@ -283,6 +286,7 @@ function bindEvents() {
 
   document.getElementById("btn-lyrics")!.addEventListener("click", toggleLyrics);
   document.getElementById("lyrics-close")!.addEventListener("click", toggleLyrics);
+  document.getElementById("btn-download")!.addEventListener("click", downloadCurrentSong);
 }
 
 function bindCardClicks() {
@@ -416,6 +420,57 @@ function startProgressTracking() {
         updateActiveLyricLine(cur * 1000);
     }
   }, 250);
+}
+
+// ─── Download ───
+async function downloadCurrentSong() {
+  if (!currentSong || isDownloading) return;
+  isDownloading = true;
+
+  const btn = document.getElementById("btn-download")!;
+  const originalHTML = btn.innerHTML;
+  btn.innerHTML = `<div class="dl-spinner"></div>`;
+  btn.classList.add("downloading");
+
+  try {
+    const fileName = `${currentSong.title} - ${currentSong.artists?.map(a => a.name).join(", ") || "Unknown"}`;
+    const dlUrl = await getDownloadUrl(currentSong.id);
+    // Append filename to the proxy URL
+    const fullUrl = dlUrl + `&name=${encodeURIComponent(fileName)}`;
+
+    const response = await fetch(fullUrl);
+    if (!response.ok) throw new Error(`Download failed: ${response.status}`);
+
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    // Determine extension from content-type
+    const ct = response.headers.get("content-type") || "audio/mp4";
+    const ext = ct.includes("webm") ? "webm" : ct.includes("ogg") ? "ogg" : "m4a";
+    a.download = `${fileName}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+
+    // Brief success flash
+    btn.innerHTML = `<span class="material-symbols-outlined" style="color: #22c55e;">check_circle</span>`;
+    setTimeout(() => {
+      btn.innerHTML = originalHTML;
+      btn.classList.remove("downloading");
+    }, 1800);
+  } catch (e) {
+    console.error("Download error:", e);
+    btn.innerHTML = `<span class="material-symbols-outlined" style="color: #ef4444;">error</span>`;
+    setTimeout(() => {
+      btn.innerHTML = originalHTML;
+      btn.classList.remove("downloading");
+    }, 2000);
+  } finally {
+    isDownloading = false;
+  }
 }
 
 // ─── Lyrics ───

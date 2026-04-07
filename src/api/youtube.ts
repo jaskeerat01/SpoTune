@@ -53,10 +53,9 @@ function bestThumb(thumbnails?: { url: string; width?: number }[]): string {
 function fixThumbUrl(url: string): string {
   if (!url) return '';
   if (url.startsWith('//')) url = 'https:' + url;
-  // Proxy Google image CDN to avoid ORB/CORS blocking
-  if (url.includes('lh3.googleusercontent.com') || url.includes('yt3.ggpht.com') || url.includes('i.ytimg.com')) {
-    return `/img-proxy?url=${encodeURIComponent(url)}`;
-  }
+  // img tags can load cross-origin images directly without CORS issues,
+  // so no proxy is needed. Just ensure the URL uses https.
+  if (url.startsWith('http://')) url = url.replace('http://', 'https://');
   return url;
 }
 
@@ -350,6 +349,51 @@ export async function getStreamUrl(videoId: string): Promise<string> {
   if (webUrl) return webUrl;
 
   throw new Error('No stream URL available — all strategies exhausted');
+}
+
+/**
+ * Get a download-ready audio URL targeting ~128kbps.
+ * Returns a /dl-proxy URL that streams through our server to avoid CORS.
+ */
+export async function getDownloadUrl(videoId: string): Promise<string> {
+  const TARGET_BITRATE = 128000; // 128kbps
+
+  // Try Piped API
+  try {
+    const res = await fetch(`/yt-proxy/streams/${videoId}`, { signal: AbortSignal.timeout(12000) });
+    if (res.ok) {
+      const data = await res.json();
+      const audioStreams = data?.audioStreams || [];
+      if (audioStreams.length) {
+        // Find the stream closest to 128kbps
+        const sorted = [...audioStreams]
+          .filter((s: any) => s.url && s.mimeType?.includes('audio'))
+          .sort((a: any, b: any) =>
+            Math.abs((a.bitrate || 0) - TARGET_BITRATE) - Math.abs((b.bitrate || 0) - TARGET_BITRATE)
+          );
+        const pick = sorted[0];
+        if (pick?.url) return `/dl-proxy?url=${encodeURIComponent(pick.url)}`;
+      }
+    }
+  } catch { /* try next */ }
+
+  // Try Invidious API
+  try {
+    const res = await fetch(`/yt-proxy/api/v1/videos/${videoId}`, { signal: AbortSignal.timeout(12000) });
+    if (res.ok) {
+      const data = await res.json();
+      const formats = data?.adaptiveFormats || [];
+      const audioFormats = formats.filter((f: any) => f.type?.startsWith('audio/') && f.url);
+      if (audioFormats.length) {
+        const sorted = [...audioFormats].sort((a: any, b: any) =>
+          Math.abs((a.bitrate || 0) - TARGET_BITRATE) - Math.abs((b.bitrate || 0) - TARGET_BITRATE)
+        );
+        if (sorted[0]?.url) return `/dl-proxy?url=${encodeURIComponent(sorted[0].url)}`;
+      }
+    }
+  } catch { /* unavailable */ }
+
+  throw new Error('No download URL available');
 }
 
 export async function getNext(videoId: string, playlistId?: string): Promise<SongItem[]> {

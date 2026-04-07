@@ -510,8 +510,61 @@ img { display: block; }
 .opacity-50 { opacity: 0.5 !important; }
 
 /* ═══════════════════════════════════════════════════════════════
+   DOWNLOAD BUTTON STATES
+   ═══════════════════════════════════════════════════════════════ */
+.dl-spinner {
+  width: 18px; height: 18px;
+  border: 2px solid rgba(255,255,255,0.15);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+#btn-download {
+  position: relative;
+}
+
+#btn-download.downloading {
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+/* Tooltip on hover */
+#btn-download::after {
+  content: '128kbps';
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%) scale(0.9);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.2s ease;
+}
+
+#btn-download:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
+}
+
+/* ═══════════════════════════════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════════════════════════════ */
+
+/* Tablet & small desktop */
+@media (max-width: 768px) {
+  .sp-volume-wrap { display: none; }
+  .sp-player-extra { max-width: 80px; }
+}
+
+/* Mobile */
 @media (max-width: 640px) {
   .sp-header { padding: 0 16px; gap: 12px; }
   .sp-home { padding: 24px 16px 48px; }
@@ -521,12 +574,35 @@ img { display: block; }
   }
   .sp-greeting { font-size: 24px; margin-bottom: 24px; }
   .sp-volume-wrap { display: none; }
-  .sp-player-track { max-width: 150px; }
-  .sp-player-extra { max-width: 48px; }
+  .sp-player-track { max-width: 120px; }
+  .sp-player-extra { max-width: 80px; gap: 0; }
   .sp-page { padding: 24px 16px; }
   .lyrics-panel { width: 100%; right: -100%; }
-  .sp-player-row { padding: 4px 14px 0; }
-  .sp-progress-wrap { padding: 0 14px; }
+  .sp-player-row { padding: 4px 12px 0; gap: 8px; }
+  .sp-progress-wrap { padding: 0 12px; }
+  .sp-player-controls { gap: 0; }
+  .sp-play-btn { width: 32px; height: 32px; }
+  .sp-ctrl-btn { padding: 5px; }
+  .sp-ctrl-btn .material-symbols-outlined { font-size: 20px; }
+
+  /* Hide lyrics on very small screens, keep download */
+  #btn-lyrics { display: none; }
+
+  /* Download always visible */
+  #btn-download { display: flex; }
+  #btn-download::after { display: none; } /* no tooltip on mobile */
+}
+
+/* Very small screens (iPhone SE etc.) */
+@media (max-width: 380px) {
+  .sp-player-track { max-width: 100px; }
+  .sp-player-thumb { width: 34px; height: 34px; }
+  .sp-player-title { font-size: 11px; }
+  .sp-player-artist { font-size: 10px; }
+  .sp-grid {
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 10px;
+  }
 }
 
 @media (min-width: 1200px) {
@@ -536,3 +612,4 @@ img { display: block; }
   }
   .sp-home { padding: 40px 48px; }
 }
+

@@ -14,5 +14,9 @@
   path = "/yt-proxy/*"
   function = "api-proxy"
 
+[[edge_functions]]
+  path = "/dl-proxy"
+  function = "api-proxy"
+
 # The /audiostream proxy is no longer used since we switched to YT IFrame Player,
 # but if it's hit it will also be routed for safety.
