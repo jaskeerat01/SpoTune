@@ -35,6 +35,8 @@ let searchDebounce: ReturnType<typeof setTimeout> | null = null;
 let progressInterval: ReturnType<typeof setInterval> | null = null;
 let isDownloading = false;
 
+const MAX_QUEUE = 100; // cap queue to limit memory
+
 // ─── Utils ───
 function formatTime(sec: number): string {
   if (!isFinite(sec) || sec < 0) return "0:00";
@@ -51,6 +53,75 @@ const icons = {
     play: `<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">play_arrow</span>`,
     pause: `<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">pause</span>`,
 };
+
+// ─── Cookie-based Search History ───
+const SEARCH_HISTORY_COOKIE = "st_search_history";
+const MAX_HISTORY = 20;
+
+function getSearchHistory(): string[] {
+  const match = document.cookie.split("; ").find(c => c.startsWith(SEARCH_HISTORY_COOKIE + "="));
+  if (!match) return [];
+  try {
+    return JSON.parse(decodeURIComponent(match.split("=")[1]));
+  } catch {
+    return [];
+  }
+}
+
+function saveSearchQuery(query: string) {
+  const history = getSearchHistory().filter(q => q.toLowerCase() !== query.toLowerCase());
+  history.unshift(query);
+  if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
+  const encoded = encodeURIComponent(JSON.stringify(history));
+  // Cookie persists for 1 year
+  const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toUTCString();
+  document.cookie = `${SEARCH_HISTORY_COOKIE}=${encoded}; expires=${expires}; path=/; SameSite=Lax`;
+}
+
+/** Pick N random unique items from an array */
+function pickRandom<T>(arr: T[], n: number): T[] {
+  const shuffled = [...arr].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, n);
+}
+
+async function getRecommendedSections(): Promise<HomeSection[]> {
+  const history = getSearchHistory();
+  if (!history.length) {
+    // New user fallback — generic suggestions
+    const items = await search("top hits 2026").catch(() => []);
+    const songs = items.filter(isSong).slice(0, 10);
+    return songs.length ? [{ title: "Popular right now", items: songs }] : [];
+  }
+
+  // Pick up to 3 random past searches
+  const picks = pickRandom(history, Math.min(3, history.length));
+  const sections: HomeSection[] = [];
+
+  const results = await Promise.allSettled(
+    picks.map(q => search(q).then(items => ({ query: q, items })))
+  );
+
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      const songs = result.value.items.filter(isSong).slice(0, 10);
+      if (songs.length) {
+        sections.push({
+          title: `Because you searched "${result.value.query}"`,
+          items: songs,
+        });
+      }
+    }
+  }
+
+  // If all searches failed, fall back to generic
+  if (!sections.length) {
+    const items = await search("trending music").catch(() => []);
+    const songs = items.filter(isSong).slice(0, 10);
+    if (songs.length) sections.push({ title: "Trending now", items: songs });
+  }
+
+  return sections;
+}
 
 // ─── Render App Shell ───
 function renderApp() {
@@ -120,15 +191,19 @@ async function loadHomePage() {
   pc.innerHTML = `<div class="sp-loading"><div class="loading-spinner"></div><p>Loading...</p></div>`;
 
   try {
-    const [sections, suggestedItems] = await Promise.all([
+    // Fetch YT Music home sections + personalized recommendations in parallel
+    const [sections, recommendedSections] = await Promise.all([
       getHome(),
-      search("top hits 2026").catch(() => [])
+      getRecommendedSections(),
     ]);
-    const suggestedSongs = suggestedItems.filter(isSong).slice(0, 10);
-    if (suggestedSongs.length > 0) {
-      sections.push({ title: "Suggested for you", items: suggestedSongs });
-    }
+
+    // Append personalized sections after the YT Music sections
+    sections.push(...recommendedSections);
+
     if (!sections.length) throw new Error("No sections");
+
+    // Limit total sections to keep DOM lean
+    if (sections.length > 6) sections.length = 6;
 
     const hour = new Date().getHours();
     const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
@@ -194,6 +269,9 @@ function renderListRow(item: YTItem, index: number) {
 
 // ─── Search ───
 async function performSearch(query: string) {
+  // Save this search to cookie history
+  saveSearchQuery(query);
+
   const pc = document.getElementById("page-content")!;
   pc.innerHTML = `<div class="sp-loading"><div class="loading-spinner"></div><p>Searching "${query}"...</p></div>`;
 
@@ -336,9 +414,11 @@ async function playSong(song: SongItem) {
         } else if (state === STATE.PAUSED) {
           isPlaying = false;
           updatePlayButton();
+          stopProgressTracking();
         } else if (state === STATE.ENDED) {
           isPlaying = false;
           updatePlayButton();
+          stopProgressTracking();
           playNext();
         }
       });
@@ -352,9 +432,10 @@ async function playSong(song: SongItem) {
     if (queue.length <= 1) {
       getNext(song.id).then((items) => {
         if (items.length) {
-          queue = items;
+          queue = items.slice(0, MAX_QUEUE);
           queueIndex = queue.findIndex((s) => s.id === song.id);
           if (queueIndex === -1) { queue.unshift(song); queueIndex = 0; }
+          if (queue.length > MAX_QUEUE) queue.length = MAX_QUEUE;
         }
       });
     } else {
@@ -401,20 +482,31 @@ function updatePlayButton() {
   btn.innerHTML = isPlaying ? icons.pause : icons.play;
 }
 
+function stopProgressTracking() {
+  if (progressInterval) { clearInterval(progressInterval); progressInterval = null; }
+}
+
+// Cached DOM refs for progress tracker (avoid 4 lookups per 250ms)
+let _progCurEl: HTMLElement | null = null;
+let _progTotEl: HTMLElement | null = null;
+let _progFillEl: HTMLElement | null = null;
+
 function startProgressTracking() {
-  if (progressInterval) clearInterval(progressInterval);
+  stopProgressTracking();
+  // Cache DOM elements once
+  _progCurEl = document.getElementById("st-time-current");
+  _progTotEl = document.getElementById("st-time-total");
+  _progFillEl = document.getElementById("st-progress-fill");
+
   progressInterval = setInterval(() => {
     if (!ytPlayerReady) return;
     const cur = getCurrentTime();
     const dur = getDuration();
-    const curEl = document.getElementById("st-time-current");
-    const totEl = document.getElementById("st-time-total");
-    if (curEl) curEl.textContent = formatTime(cur);
-    if (totEl) totEl.textContent = formatTime(dur);
+    if (_progCurEl) _progCurEl.textContent = formatTime(cur);
+    if (_progTotEl) _progTotEl.textContent = formatTime(dur);
     
     const pct = dur > 0 ? (cur / dur) * 100 : 0;
-    const fill = document.getElementById("st-progress-fill");
-    if (fill) fill.style.width = `${pct}%`;
+    if (_progFillEl) _progFillEl.style.width = `${pct}%`;
 
     if (lyricsOpen && lyricsData?.synced && lyricsData.sentences) {
         updateActiveLyricLine(cur * 1000);
@@ -453,7 +545,7 @@ async function downloadCurrentSong() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 
     // Brief success flash
     btn.innerHTML = `<span class="material-symbols-outlined" style="color: #22c55e;">check_circle</span>`;
@@ -476,6 +568,12 @@ async function downloadCurrentSong() {
 // ─── Lyrics ───
 async function loadLyrics(song: SongItem) {
   const body = document.getElementById("lyrics-body")!;
+  // Free old lyrics data before loading new
+  if (lyricsData) {
+    if (lyricsData.sentences) lyricsData.sentences.clear();
+    lyricsData = null;
+  }
+  _cachedLyricLines = null; // clear cached NodeList
   body.innerHTML = `<div class="sp-loading"><div class="loading-spinner"></div></div>`;
 
   const artist = song.artists?.[0]?.name || "";
@@ -493,22 +591,45 @@ async function loadLyrics(song: SongItem) {
   } else {
     body.innerHTML = lyricsData.text.split("\n").map((line) => `<div class="lyrics-line">${line || "&nbsp;"}</div>`).join("");
   }
+  _cachedLyricLines = null; // force re-cache on next sync
 }
 
+// Cache lyric line elements to avoid querySelectorAll every 250ms
+let _cachedLyricLines: NodeListOf<Element> | null = null;
+let _lastActiveLyricIdx = -1;
+
 function updateActiveLyricLine(currentMs: number) {
-  const lines = document.querySelectorAll(".lyrics-line[data-ts]");
-  let activeEl: Element | null = null;
-  lines.forEach((el) => {
-    const ts = Number(el.getAttribute("data-ts"));
-    if (ts <= currentMs) activeEl = el;
-    el.classList.remove("text-primary", "text-xl", "opacity-100");
-    el.classList.add("text-on-surface-variant", "opacity-50");
-  });
-  if (activeEl) {
-    (activeEl as HTMLElement).classList.remove("text-on-surface-variant", "opacity-50");
-    (activeEl as HTMLElement).classList.add("text-primary", "text-xl", "opacity-100");
-    (activeEl as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
+  if (!_cachedLyricLines) {
+    _cachedLyricLines = document.querySelectorAll(".lyrics-line[data-ts]");
+    _lastActiveLyricIdx = -1;
   }
+  const lines = _cachedLyricLines;
+  if (!lines.length) return;
+
+  // Binary-style scan: find the last line with ts <= currentMs
+  let newActive = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (Number(lines[i].getAttribute("data-ts")) <= currentMs) newActive = i;
+    else break; // timestamps are sorted, stop early
+  }
+
+  // Only update DOM if the active line changed
+  if (newActive === _lastActiveLyricIdx) return;
+
+  // Remove highlight from old active
+  if (_lastActiveLyricIdx >= 0 && _lastActiveLyricIdx < lines.length) {
+    const old = lines[_lastActiveLyricIdx] as HTMLElement;
+    old.classList.remove("text-primary", "text-xl", "opacity-100");
+    old.classList.add("text-on-surface-variant", "opacity-50");
+  }
+  // Add highlight to new active
+  if (newActive >= 0) {
+    const el = lines[newActive] as HTMLElement;
+    el.classList.remove("text-on-surface-variant", "opacity-50");
+    el.classList.add("text-primary", "text-xl", "opacity-100");
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+  _lastActiveLyricIdx = newActive;
 }
 
 function toggleLyrics() {

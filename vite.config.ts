@@ -1,6 +1,7 @@
 import { defineConfig, type Plugin } from 'vite';
 import http from 'http';
 import https from 'https';
+import obfuscatorPlugin from 'vite-plugin-javascript-obfuscator';
 
 /**
  * Custom Vite plugin to proxy audio stream URLs.
@@ -228,7 +229,82 @@ function invidiousProxy(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [audioStreamProxy(), imageProxy(), downloadProxy(), invidiousProxy()],
+  plugins: [
+    audioStreamProxy(),
+    imageProxy(),
+    downloadProxy(),
+    invidiousProxy(),
+
+    // ─── Code Obfuscation (build only) ───
+    obfuscatorPlugin({
+      apply: 'build',
+      options: {
+        // ── Control Flow ──
+        controlFlowFlattening: true,
+        controlFlowFlatteningThreshold: 0.75,
+        deadCodeInjection: true,
+        deadCodeInjectionThreshold: 0.4,
+
+        // ── String Protection ──
+        stringArray: true,
+        stringArrayThreshold: 0.8,
+        stringArrayEncoding: ['rc4'],
+        stringArrayIndexShift: true,
+        stringArrayRotate: true,
+        stringArrayShuffle: true,
+        stringArrayWrappersCount: 2,
+        stringArrayWrappersChainedCalls: true,
+        stringArrayWrappersType: 'function',
+        splitStrings: true,
+        splitStringsChunkLength: 6,
+        unicodeEscapeSequence: true,
+
+        // ── Identifier Mangling ──
+        identifierNamesGenerator: 'hexadecimal',
+        renameGlobals: true,
+        renameProperties: false, // keep false to avoid breaking DOM APIs
+        transformObjectKeys: true,
+
+        // ── Anti-Debug & Anti-Tamper ──
+        selfDefending: true,
+        debugProtection: true,
+        debugProtectionInterval: 2000,
+        disableConsoleOutput: true,
+
+        // ── Misc Hardening ──
+        numbersToExpressions: true,
+        simplify: true,
+        compact: true,
+        target: 'browser',
+
+        // ── Source Map (hidden — generated locally for you, never served) ──
+        sourceMap: false, // obfuscator's own maps off; Vite handles hidden maps
+      },
+    }),
+  ],
+
+  build: {
+    // Generate source maps locally but NEVER deploy them.
+    // The .map files stay on your machine for debugging.
+    // Add "dist/**/*.map" to .gitignore so they're never pushed.
+    sourcemap: 'hidden',
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: true,
+        drop_debugger: true,
+        passes: 2,
+      },
+      mangle: {
+        toplevel: true,
+        properties: false, // keep false to avoid breaking DOM
+      },
+      format: {
+        comments: false,
+      },
+    },
+  },
+
   server: {
     proxy: {
       '/ytapi': {
