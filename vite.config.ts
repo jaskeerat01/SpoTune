@@ -57,6 +57,114 @@ function audioStreamProxy(): Plugin {
 }
 
 /**
+ * Custom plugin to proxy Google image thumbnails.
+ * Handles /img-proxy?url=<encoded_url> to bypass ORB/CORS restrictions on lh3.googleusercontent.com.
+ */
+function imageProxy(): Plugin {
+  return {
+    name: 'image-proxy',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (!req.url?.startsWith('/img-proxy')) return next();
+
+        const params = new URL(req.url, 'http://localhost').searchParams;
+        const targetUrl = params.get('url');
+        if (!targetUrl) {
+          res.writeHead(400);
+          res.end('Missing url parameter');
+          return;
+        }
+
+        const parsedUrl = new URL(targetUrl);
+        const isHttps = parsedUrl.protocol === 'https:';
+        const client = isHttps ? https : http;
+
+        const proxyReq = client.get(targetUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Gecko/20100101 Firefox/128.0',
+          },
+        }, (proxyRes) => {
+          const fwdHeaders: Record<string, string | string[]> = {
+            'Cache-Control': 'public, max-age=86400',
+          };
+          for (const key of ['content-type', 'content-length']) {
+            if (proxyRes.headers[key]) {
+              fwdHeaders[key] = proxyRes.headers[key] as string;
+            }
+          }
+          res.writeHead(proxyRes.statusCode || 200, fwdHeaders);
+          proxyRes.pipe(res);
+        });
+
+        proxyReq.on('error', () => {
+          if (!res.headersSent) {
+            res.writeHead(502);
+            res.end('Image proxy error');
+          }
+        });
+
+        req.on('close', () => proxyReq.destroy());
+      });
+    },
+  };
+}
+
+/**
+ * Custom plugin to proxy audio downloads.
+ * Handles /dl-proxy?url=<encoded_url>&name=<filename> to pipe audio with download headers.
+ */
+function downloadProxy(): Plugin {
+  return {
+    name: 'download-proxy',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (!req.url?.startsWith('/dl-proxy')) return next();
+
+        const params = new URL(req.url, 'http://localhost').searchParams;
+        const targetUrl = params.get('url');
+        const fileName = params.get('name') || 'audio';
+        if (!targetUrl) {
+          res.writeHead(400);
+          res.end('Missing url parameter');
+          return;
+        }
+
+        const parsedUrl = new URL(targetUrl);
+        const isHttps = parsedUrl.protocol === 'https:';
+        const client = isHttps ? https : http;
+
+        const proxyReq = client.get(targetUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Gecko/20100101 Firefox/128.0',
+          },
+        }, (proxyRes) => {
+          const contentType = proxyRes.headers['content-type'] || 'audio/mp4';
+          const ext = contentType.includes('webm') ? 'webm' : contentType.includes('ogg') ? 'ogg' : 'm4a';
+          const fwdHeaders: Record<string, string> = {
+            'Content-Type': contentType,
+            'Content-Disposition': `attachment; filename="${fileName}.${ext}"`,
+          };
+          if (proxyRes.headers['content-length']) {
+            fwdHeaders['Content-Length'] = proxyRes.headers['content-length'] as string;
+          }
+          res.writeHead(proxyRes.statusCode || 200, fwdHeaders);
+          proxyRes.pipe(res);
+        });
+
+        proxyReq.on('error', () => {
+          if (!res.headersSent) {
+            res.writeHead(502);
+            res.end('Download proxy error');
+          }
+        });
+
+        req.on('close', () => proxyReq.destroy());
+      });
+    },
+  };
+}
+
+/**
  * Custom plugin to proxy Invidious/Piped API requests.
  * Tries multiple instances in sequence if one fails.
  */
@@ -120,7 +228,7 @@ function invidiousProxy(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [audioStreamProxy(), invidiousProxy()],
+  plugins: [audioStreamProxy(), imageProxy(), downloadProxy(), invidiousProxy()],
   server: {
     proxy: {
       '/ytapi': {

@@ -16,7 +16,7 @@ export interface SongItem {
   artists: { name: string; id?: string }[];
   album?: { name: string; id?: string };
   thumbnail: string;
-  duration?: number;        // seconds
+  duration?: number; // seconds
   durationText?: string;
 }
 
@@ -48,6 +48,7 @@ export type YTItem = SongItem | AlbumItem | ArtistItem | PlaylistItem;
 export interface HomeSection {
   title: string;
   items: YTItem[];
+  browseId?: string;
 }
 
 export interface SearchResult {
