@@ -52,7 +52,11 @@ function bestThumb(thumbnails?: { url: string; width?: number }[]): string {
 
 function fixThumbUrl(url: string): string {
   if (!url) return '';
-  if (url.startsWith('//')) return 'https:' + url;
+  if (url.startsWith('//')) url = 'https:' + url;
+  // Proxy Google image CDN to avoid ORB/CORS blocking
+  if (url.includes('lh3.googleusercontent.com') || url.includes('yt3.ggpht.com') || url.includes('i.ytimg.com')) {
+    return `/img-proxy?url=${encodeURIComponent(url)}`;
+  }
   return url;
 }
 

@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Sonic Canvas - Library</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200;400;700;800&amp;family=Inter:wght@300;400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "inverse-surface": "#faf8ff",
+                        "primary": "#ba9eff",
+                        "error-container": "#a70138",
+                        "on-tertiary-fixed-variant": "#701039",
+                        "surface-bright": "#1f2b49",
+                        "surface-container-low": "#091328",
+                        "on-secondary-container": "#ecfaff",
+                        "on-primary": "#39008c",
+                        "inverse-on-surface": "#4d556b",
+                        "tertiary-container": "#fd81a8",
+                        "tertiary": "#ff97b5",
+                        "primary-fixed-dim": "#a27cff",
+                        "surface-tint": "#ba9eff",
+                        "secondary-container": "#00687a",
+                        "on-tertiary-container": "#59002a",
+                        "secondary-dim": "#40ceed",
+                        "surface-container-high": "#141f38",
+                        "surface-dim": "#060e20",
+                        "secondary": "#53ddfc",
+                        "on-secondary-fixed": "#003a45",
+                        "on-background": "#dee5ff",
+                        "error-dim": "#d73357",
+                        "on-tertiary": "#6a0934",
+                        "surface-variant": "#192540",
+                        "on-surface-variant": "#a3aac4",
+                        "on-secondary-fixed-variant": "#005969",
+                        "error": "#ff6e84",
+                        "on-tertiary-fixed": "#380018",
+                        "on-primary-fixed": "#000000",
+                        "tertiary-dim": "#f0779d",
+                        "surface": "#060e20",
+                        "on-surface": "#dee5ff",
+                        "primary-dim": "#8455ef",
+                        "on-error-container": "#ffb2b9",
+                        "on-error": "#490013",
+                        "tertiary-fixed-dim": "#f67ca3",
+                        "on-primary-fixed-variant": "#370086",
+                        "secondary-fixed": "#65e1ff",
+                        "background": "#060e20",
+                        "tertiary-fixed": "#ff8eb0",
+                        "inverse-primary": "#6e3bd7",
+                        "primary-fixed": "#ae8dff",
+                        "primary-container": "#ae8dff",
+                        "surface-container": "#0f1930",
+                        "surface-container-lowest": "#000000",
+                        "outline": "#6d758c",
+                        "secondary-fixed-dim": "#48d4f3",
+                        "surface-container-highest": "#192540",
+                        "on-primary-container": "#2b006e",
+                        "outline-variant": "#40485d",
+                        "on-secondary": "#004b58"
+                    },
+                    fontFamily: {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .glass-panel {
+            background: rgba(25, 37, 64, 0.6);
+            backdrop-filter: blur(20px);
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body selection:bg-primary/30">
+<!-- SideNavBar (Shared Component) -->
+<aside class="h-screen w-64 fixed left-0 top-0 bg-[#091328] border-none flex flex-col py-8 px-4 z-50">
+<div class="mb-10 px-4">
+<h1 class="text-2xl font-black text-[#ba9eff] tracking-tighter">Sonic Canvas</h1>
+<p class="font-manrope font-bold text-sm tracking-tight text-on-surface-variant opacity-70">The Digital Conductor</p>
+</div>
+<nav class="flex-1 space-y-2">
+<a class="flex items-center gap-4 py-3 text-[#a3aac4] hover:text-[#dee5ff] pl-4 hover:bg-[#192540] transition-colors duration-300 rounded-lg group" href="#">
+<span class="material-symbols-outlined">home</span>
+<span class="font-manrope font-bold text-lg tracking-tight">Home</span>
+</a>
+<a class="flex items-center gap-4 py-3 text-[#a3aac4] hover:text-[#dee5ff] pl-4 hover:bg-[#192540] transition-colors duration-300 rounded-lg group" href="#">
+<span class="material-symbols-outlined">explore</span>
+<span class="font-manrope font-bold text-lg tracking-tight">Browse</span>
+</a>
+<!-- Library is Active -->
+<a class="flex items-center gap-4 py-3 text-[#ba9eff] font-bold border-r-4 border-[#ba9eff] pl-4 bg-[#192540]/30 transition-colors duration-300 rounded-l-lg group" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">library_music</span>
+<span class="font-manrope font-bold text-lg tracking-tight">Library</span>
+</a>
+<a class="flex items-center gap-4 py-3 text-[#a3aac4] hover:text-[#dee5ff] pl-4 hover:bg-[#192540] transition-colors duration-300 rounded-lg group" href="#">
+<span class="material-symbols-outlined">radio</span>
+<span class="font-manrope font-bold text-lg tracking-tight">Radio</span>
+</a>
+<a class="flex items-center gap-4 py-3 text-[#a3aac4] hover:text-[#dee5ff] pl-4 hover:bg-[#192540] transition-colors duration-300 rounded-lg group" href="#">
+<span class="material-symbols-outlined">person</span>
+<span class="font-manrope font-bold text-lg tracking-tight">Artists</span>
+</a>
+</nav>
+<div class="mt-auto px-4 space-y-6">
+<button class="w-full bg-gradient-to-br from-primary-dim to-primary text-on-primary-fixed py-3 rounded-full font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined text-xl">add</span>
+                Create Playlist
+            </button>
+<div class="space-y-2">
+<a class="flex items-center gap-4 text-[#a3aac4] hover:text-[#dee5ff] transition-colors py-2" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-manrope font-bold text-md">Settings</span>
+</a>
+<a class="flex items-center gap-4 text-[#a3aac4] hover:text-[#dee5ff] transition-colors py-2" href="#">
+<span class="material-symbols-outlined">help</span>
+<span class="font-manrope font-bold text-md">Help</span>
+</a>
+</div>
+</div>
+</aside>
+<!-- TopNavBar (Shared Component) -->
+<header class="fixed top-0 right-0 w-[calc(100%-16rem)] h-16 z-40 bg-[#060e20]/60 backdrop-blur-xl flex items-center justify-between px-8">
+<div class="flex items-center bg-surface-container-lowest/40 rounded-full px-4 py-1.5 w-96 group focus-within:ring-1 ring-secondary/40 transition-all">
+<span class="material-symbols-outlined text-on-surface-variant text-lg">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-sm w-full placeholder:text-on-surface-variant/50" placeholder="Search your library..." type="text"/>
+</div>
+<div class="flex items-center gap-8">
+<nav class="flex gap-6">
+<a class="text-[#a3aac4] hover:text-[#53ddfc] transition-opacity font-inter text-sm font-medium" href="#">Podcasts</a>
+<a class="text-[#a3aac4] hover:text-[#53ddfc] transition-opacity font-inter text-sm font-medium" href="#">Charts</a>
+<a class="text-[#a3aac4] hover:text-[#53ddfc] transition-opacity font-inter text-sm font-medium" href="#">Live</a>
+</nav>
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<div class="w-8 h-8 rounded-full overflow-hidden border border-outline-variant/30">
+<img alt="User profile" data-alt="close-up portrait of a young man with a friendly expression in soft studio lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAhfRxXF3KIR3DhDyJNRY5Gi-E0WVk6R50C-hR_-ILID9J8_jhTmTIjkNHFDguTNnMeyBvomL0yGiJ7AFvVP2ao-OPBqjcyytq6VaMB3ASljLTAm32WOqSvdT2j6K64YCfIPkFNGOQjO_FEnPvzyb3tpJ1cuUfFfpNrGxSBAeJh3oSPllY5D2PXb5jsLQz_-cobTOUqyFP31UzslV5-GhbtLuMt-n3aNl6tNIuGSs6fStpmljUvL1pB0DxC33-Qxqc_WG1UBNxA9_jT"/>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-64 pt-24 pb-32 px-10 min-h-screen">
+<!-- Header Section -->
+<header class="mb-12 relative overflow-hidden rounded-3xl p-12 bg-surface-container-low border border-outline-variant/10">
+<div class="absolute -right-20 -top-20 w-80 h-80 bg-primary/10 blur-[100px] rounded-full"></div>
+<div class="absolute -left-10 -bottom-10 w-60 h-60 bg-secondary/10 blur-[80px] rounded-full"></div>
+<div class="relative z-10">
+<h2 class="font-headline text-5xl font-extrabold tracking-tighter mb-4 text-on-surface">Your Collection</h2>
+<div class="flex gap-4">
+<button class="px-6 py-2 rounded-full bg-primary text-on-primary-fixed font-bold text-sm">All Content</button>
+<button class="px-6 py-2 rounded-full bg-surface-container-highest text-on-surface font-semibold text-sm hover:bg-surface-container-high transition-colors">Playlists</button>
+<button class="px-6 py-2 rounded-full bg-surface-container-highest text-on-surface font-semibold text-sm hover:bg-surface-container-high transition-colors">Albums</button>
+<button class="px-6 py-2 rounded-full bg-surface-container-highest text-on-surface font-semibold text-sm hover:bg-surface-container-high transition-colors">Artists</button>
+</div>
+</div>
+</header>
+<!-- Bento Grid Layout for Quick Access -->
+<section class="grid grid-cols-12 gap-6 mb-16">
+<!-- Liked Songs Large Card -->
+<div class="col-span-12 md:col-span-5 relative group overflow-hidden rounded-2xl aspect-[16/9] md:aspect-auto md:h-full bg-gradient-to-br from-[#41297d] to-[#192540] p-8 border border-outline-variant/20">
+<div class="absolute right-[-10%] bottom-[-10%] opacity-20 transform rotate-12 group-hover:scale-110 transition-transform duration-700">
+<span class="material-symbols-outlined text-[12rem]" style="font-variation-settings: 'FILL' 1;">favorite</span>
+</div>
+<div class="relative z-10 h-full flex flex-col">
+<div class="mb-auto">
+<span class="material-symbols-outlined text-4xl mb-4 text-primary" style="font-variation-settings: 'FILL' 1;">favorite</span>
+<h3 class="font-headline text-3xl font-extrabold mb-1">Liked Songs</h3>
+<p class="text-on-surface-variant font-medium">1,248 tracks curated by you</p>
+</div>
+<button class="w-12 h-12 bg-primary text-on-primary-fixed rounded-full flex items-center justify-center self-end shadow-xl hover:scale-105 transition-transform">
+<span class="material-symbols-outlined fill-1">play_arrow</span>
+</button>
+</div>
+</div>
+<!-- Recently Added / Right Column -->
+<div class="col-span-12 md:col-span-7 space-y-6">
+<div class="flex items-center justify-between">
+<h4 class="font-headline text-xl font-bold">Recently Added</h4>
+<button class="text-primary text-sm font-semibold hover:underline">View all</button>
+</div>
+<div class="space-y-2">
+<!-- Song Row -->
+<div class="group flex items-center gap-4 p-3 rounded-xl hover:bg-surface-container-highest/60 transition-colors">
+<div class="w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 shadow-lg border border-outline-variant/10">
+<img class="w-full h-full object-cover" data-alt="neon purple album cover with abstract geometric shapes and light trails" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCaZUZvwjmiMKMS9CLa7Ay_m9IhfU1RRoqYsPUEyTBS04w6YPmbFA2Oc-IJWfVz81Yn8VvfsHPDaQstOC5j9OxFw-vDrEG-vr5zcRQrdfygGiAlyxZgkugKUcUOM8uGoOY2pOJW1CHMoKos6ZDkvUGMDYfV0cAmmVyd3uj7Alp6E8O8IJYl0vkeaBUVm6t8pmvvyqIy6bp7TGlzZbEXuolvdDi4E02NO8LJUBoNd969AJSGjv4379B5vCH0-aiG0gIc3b20lo2UPVsI"/>
+</div>
+<div class="flex-1 min-w-0">
+<h5 class="font-bold text-on-surface truncate">Midnight Echoes</h5>
+<p class="text-sm text-on-surface-variant truncate">Luna Ray • Digital Dreamscape</p>
+</div>
+<div class="text-xs text-on-surface-variant font-medium px-4">2 days ago</div>
+<div class="text-sm text-on-surface-variant font-medium w-12 text-right">3:45</div>
+<button class="opacity-0 group-hover:opacity-100 p-2 text-on-surface-variant hover:text-primary transition-all">
+<span class="material-symbols-outlined text-xl">more_vert</span>
+</button>
+</div>
+<!-- Song Row -->
+<div class="group flex items-center gap-4 p-3 rounded-xl hover:bg-surface-container-highest/60 transition-colors">
+<div class="w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 shadow-lg border border-outline-variant/10">
+<img class="w-full h-full object-cover" data-alt="black and white moody portrait of a jazz musician with a saxophone in a dimly lit club" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBOt3v76NyqMbD7UlriSxDpHTqocQDCeAp6v12WfOxKJZ9EIi83ksJHDJKnG33ns3vR9Vkyc4tIe1UWKN4HfC1KXDh7DLGW3vJCvxpsLQ0h31jyfs8JU1TDh_QllCEmP3myqwD8LjacEh6-i4V1F8oqKkc15CiIoD3lis-_B_BCnzhw3w80NIgllrK9S0Dhw6jO-IxYgCg1Pfe6F4HjnVJr8aT17_GZe-fu1ZysT2NdBFo71uc_23uQaEvFOJXm4Eikb5G5Cn7b3cBn"/>
+</div>
+<div class="flex-1 min-w-0">
+<h5 class="font-bold text-on-surface truncate">Velvet Blue</h5>
+<p class="text-sm text-on-surface-variant truncate">The Night Shift • After Hours Jazz</p>
+</div>
+<div class="text-xs text-on-surface-variant font-medium px-4">4 days ago</div>
+<div class="text-sm text-on-surface-variant font-medium w-12 text-right">5:12</div>
+<button class="opacity-0 group-hover:opacity-100 p-2 text-on-surface-variant hover:text-primary transition-all">
+<span class="material-symbols-outlined text-xl">more_vert</span>
+</button>
+</div>
+<!-- Song Row -->
+<div class="group flex items-center gap-4 p-3 rounded-xl hover:bg-surface-container-highest/60 transition-colors">
+<div class="w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 shadow-lg border border-outline-variant/10">
+<img class="w-full h-full object-cover" data-alt="minimalist album cover with a single red rose on a stark white background with grain texture" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDErakOfg2gobTZ9oEdwI4QGLEAzyuFF1fq95cmb6Mf4HRiiISr90ErY6cRpFIDAmUiHT_240jUtXKZFibmE28AFraYx2PPQC8mP2WlS6G2uTWH_iQKCD5fXC6fFEtMxuRaHz3MQ4uxiEygIoxNVLlQfYYIIOwUPVQstCbwCtWr-5fqU7O1a_o7PFFmB6oh8OGa2bxMrQgmA_TUCRULRa4t5jC2i59o74fbQ9fEaTquJnT9G3b_sxvXHVu7bHBTuyPHHcWsblV9absi"/>
+</div>
+<div class="flex-1 min-w-0">
+<h5 class="font-bold text-on-surface truncate">Scarlet Petals</h5>
+<p class="text-sm text-on-surface-variant truncate">Aria Thorne • Solo Piano</p>
+</div>
+<div class="text-xs text-on-surface-variant font-medium px-4">1 week ago</div>
+<div class="text-sm text-on-surface-variant font-medium w-12 text-right">4:20</div>
+<button class="opacity-0 group-hover:opacity-100 p-2 text-on-surface-variant hover:text-primary transition-all">
+<span class="material-symbols-outlined text-xl">more_vert</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Playlists Grid -->
+<section class="mb-16">
+<div class="flex items-center justify-between mb-8">
+<h4 class="font-headline text-2xl font-extrabold tracking-tight">My Playlists</h4>
+<div class="flex gap-2">
+<button class="p-2 bg-surface-container hover:bg-surface-container-high rounded-full transition-colors">
+<span class="material-symbols-outlined">grid_view</span>
+</button>
+<button class="p-2 bg-surface-container hover:bg-surface-container-high rounded-full transition-colors">
+<span class="material-symbols-outlined">format_list_bulleted</span>
+</button>
+</div>
+</div>
+<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+<!-- Create New Card -->
+<div class="group cursor-pointer">
+<div class="aspect-square bg-surface-container-low border-2 border-dashed border-outline-variant/30 rounded-2xl flex flex-col items-center justify-center gap-3 group-hover:border-primary/50 group-hover:bg-surface-container transition-all">
+<div class="w-12 h-12 rounded-full bg-surface-container-highest flex items-center justify-center group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-primary text-3xl">add</span>
+</div>
+<span class="font-bold text-sm text-on-surface-variant group-hover:text-primary">Create New</span>
+</div>
+</div>
+<!-- Playlist Card -->
+<div class="group cursor-pointer">
+<div class="relative aspect-square rounded-2xl overflow-hidden mb-4 shadow-xl">
+<img class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" data-alt="dynamic concert crowd with colorful stage lighting and silhouettes of people dancing" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA_9FRcmF4aomVMGeL1Z7TQBaXn_SptR6lNMOQ2WAMRHWoS46iTZdn0PFYW_Gn3WxKT4iQ6RwZhIt2M6gTt1-0-7tsfm7RjzCgN7XWoZ83m4QdqjYYdvBZcF8IDCj-k0Cq3IBgrOUvl45gRjgCf33KXalR1ciTmfvqh35s4KX6Vs_0WmyPRCjylNBRBpFm5VJbrT0rD6rdWCBihQ_wXBIXtRYjShW-zgW8iQiTJgtaqau024D4BrCJi2xQu_nS8WeJT_jynbdNr4_Xq"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
+<button class="w-10 h-10 bg-primary text-on-primary-fixed rounded-full flex items-center justify-center shadow-lg transform translate-y-4 group-hover:translate-y-0 transition-transform">
+<span class="material-symbols-outlined">play_arrow</span>
+</button>
+</div>
+</div>
+<h5 class="font-bold truncate text-on-surface">Summer Vibes 2024</h5>
+<p class="text-xs text-on-surface-variant mt-0.5">Updated yesterday • 42 songs</p>
+</div>
+<!-- Playlist Card -->
+<div class="group cursor-pointer">
+<div class="relative aspect-square rounded-2xl overflow-hidden mb-4 shadow-xl">
+<img class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" data-alt="vintage microphone on a dark background with soft moody red lighting and atmospheric smoke" src="https://lh3.googleusercontent.com/aida-public/AB6AXuColTzkno8Z8EDOh6JdQGVLQojhTS8JfhdTAz0sCri7dLESwim3GTsz2HfUwsN2b6qWAx-NnYMX3G9QD-Nx3f3FyoVSBlP1x4BqbRj8ZpjKH8jvc9voNTE5HGIBNMUzCxGpyMy7VBaoCvbgtyiWONnrE4K1rUut8p3natGiwEbvQFqcB2G_V3ueoWJJwC5GiOPeokDpAq2Nug029XoFJbSILQobdKeBGyuDUtaUImagMmDSl_QDUPBi6AvSAd-Pi8NHIBZe-sDAh9hP"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
+<button class="w-10 h-10 bg-primary text-on-primary-fixed rounded-full flex items-center justify-center shadow-lg transform translate-y-4 group-hover:translate-y-0 transition-transform">
+<span class="material-symbols-outlined">play_arrow</span>
+</button>
+</div>
+</div>
+<h5 class="font-bold truncate text-on-surface">Deep Focus Beats</h5>
+<p class="text-xs text-on-surface-variant mt-0.5">By Sonic Canvas • 108 songs</p>
+</div>
+<!-- Playlist Card -->
+<div class="group cursor-pointer">
+<div class="relative aspect-square rounded-2xl overflow-hidden mb-4 shadow-xl">
+<img class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" data-alt="abstract swirl of iridescent paint colors mixing in water with macro detail and tiny bubbles" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCH4gnBzabzEf7zstI7g-bKh3S3R8fd3Nbej9MCIyPPae_2ygtHugGQwWRhnEAa-TgS6JAvx1QCpjWn97VVPjvign2p7if4fga3g8arVKBf5fwxV7fXEv1BnR3mm8tu6cV7IVWk8ApT27HK7xLIWXJeNOlA2pD6ERirkWYVT-bCyTY1KS9MV_ynd79-u97Ruqnv-gvqSBVl3fgKyKrbop3IM7NfCy3vvwrWxpsdWvTIQi-EmMBqE9DRlWtyzBGWidSdNEB-BwcSW0Db"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
+<button class="w-10 h-10 bg-primary text-on-primary-fixed rounded-full flex items-center justify-center shadow-lg transform translate-y-4 group-hover:translate-y-0 transition-transform">
+<span class="material-symbols-outlined">play_arrow</span>
+</button>
+</div>
+</div>
+<h5 class="font-bold truncate text-on-surface">Indie Discovery</h5>
+<p class="text-xs text-on-surface-variant mt-0.5">Monthly update • 24 songs</p>
+</div>
+<!-- Playlist Card -->
+<div class="group cursor-pointer">
+<div class="relative aspect-square rounded-2xl overflow-hidden mb-4 shadow-xl">
+<img class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" data-alt="vibrant laser light show in a night club with rays of blue and pink light cutting through haze" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDzSIut_xDWvexpmsxBU0IMmYkT48LRT0OiY24K4rhYcAzEN0YDKDlPI5RpeKv6LH4hc0lDqTPV2IO3Y5GyWN7QtuH9CXgz1kvWVnke20qhgNXUPCvA2VIBfij5Juh8Rf8VDxFU1zCGyhfsDJn_sXGJuB6EKc28Cq5GQcuUUpA7Ny-5VP6gBrw301FI-hQHYC_PW5jdf3-2VhLABALOQf3LaR4V45a3Byc9REhxfIqqDGD5EVikjCKDB92pPmNpDGesd59RT5cdO1ZB"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
+<button class="w-10 h-10 bg-primary text-on-primary-fixed rounded-full flex items-center justify-center shadow-lg transform translate-y-4 group-hover:translate-y-0 transition-transform">
+<span class="material-symbols-outlined">play_arrow</span>
+</button>
+</div>
+</div>
+<h5 class="font-bold truncate text-on-surface">Late Night Techno</h5>
+<p class="text-xs text-on-surface-variant mt-0.5">Updated 3h ago • 65 songs</p>
+</div>
+<!-- Playlist Card -->
+<div class="group cursor-pointer">
+<div class="relative aspect-square rounded-2xl overflow-hidden mb-4 shadow-xl">
+<img class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" data-alt="tranquil sunset over a calm ocean with soft pastel orange and purple clouds reflected in the water" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCqhFEKNiPoBw_5tYS6sGWfpGMdar0K8BhShtLSTcZShQ1FDXB-OnGOCUgxKTc-nyQ7Q4EW0jKg__om5CHwvuvdor02niWp4uip0lnb7TqaVlyrcrYzWz8NW2Ct3i98wjUdZ1N9p86rSEQhiZhxfRUZ8maPDlnmm3NCohd5Lt_TzVJMADVJWFCL6tqOsbPZirZw7tJMkThhC-QrK5GpDhhB-aUBHARvTytd3NQirDtMWbzgr_vF01JJU2qwu2NIW1nlcTL8Tt5VvNSX"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
+<button class="w-10 h-10 bg-primary text-on-primary-fixed rounded-full flex items-center justify-center shadow-lg transform translate-y-4 group-hover:translate-y-0 transition-transform">
+<span class="material-symbols-outlined">play_arrow</span>
+</button>
+</div>
+</div>
+<h5 class="font-bold truncate text-on-surface">Chill Acoustic</h5>
+<p class="text-xs text-on-surface-variant mt-0.5">By you • 89 songs</p>
+</div>
+</div>
+</section>
+<!-- Following Artists List -->
+<section class="mb-16">
+<h4 class="font-headline text-2xl font-extrabold tracking-tight mb-8">Following Artists</h4>
+<div class="flex gap-8 overflow-x-auto pb-6 no-scrollbar">
+<!-- Artist Circle -->
+<div class="flex-shrink-0 flex flex-col items-center gap-3 group cursor-pointer">
+<div class="w-32 h-32 rounded-full overflow-hidden border-2 border-transparent group-hover:border-primary transition-all p-1">
+<img class="w-full h-full object-cover rounded-full" data-alt="fashion portrait of a creative woman with colorful hair and artistic makeup in a studio" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB8aq1W2RTCTfrZaBauvtz2eNahLPjuZpxmkVibmJG0kxMoiIcr_TRl5MFuQ-vJ54dHLCHpobu7-9qqR1e2rG2rt5P137JZ2Rf7vpAPGJSW4BfcDBWQhMvIuUQlRwrBYZu0BstSaSUi7fw3Fcrk1f94r0OHmnbvRSeBTNsgU9vSGr5nGnuJZXSOKcpSshA5JexQox5u754RNYFBoJhxZThCkZrsf5QuPApLJy6VU7weheKRILuFvt1QD8niW3tNDwFWzcC8bgsd7b9Z"/>
+</div>
+<span class="font-bold text-sm text-center">Luna Ray</span>
+</div>
+<!-- Artist Circle -->
+<div class="flex-shrink-0 flex flex-col items-center gap-3 group cursor-pointer">
+<div class="w-32 h-32 rounded-full overflow-hidden border-2 border-transparent group-hover:border-primary transition-all p-1">
+<img class="w-full h-full object-cover rounded-full" data-alt="close-up of a soulful man with a beard looking thoughtfully into the distance" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCWcjdsRVy3CkTEuwRrlatM3bY8pyDnjaz2b1Jd2o3KZ487IBIKZEovR6gbg-sZJW1hnTyq7qnLMS_9VUSB3r40ebDFv6f6R8QTzAs4U0tI0DOJEQwrXioRs1nHIMjHlhuvsVBYhxgggLmWGEZ_5ZJlRv9IcSxlqbjPonR9hOXe8DBWu9X-bIf1pSKTKmxXfh9OW9_DZhCsupg8bl2HmdDqAJfUQ-sqTtC3sw1Dt5pzTVPZxsIDeOSIAonRSnISEDVu_iblKORKpnR3"/>
+</div>
+<span class="font-bold text-sm text-center">The Night Shift</span>
+</div>
+<!-- Artist Circle -->
+<div class="flex-shrink-0 flex flex-col items-center gap-3 group cursor-pointer">
+<div class="w-32 h-32 rounded-full overflow-hidden border-2 border-transparent group-hover:border-primary transition-all p-1">
+<img class="w-full h-full object-cover rounded-full" data-alt="edgy portrait of a woman with braided hair wearing neon jewelry in a dark environment" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCVj2V2x4LpotlPAzTFDS0YoXfRl846CRZoKKcgdcThZ65CHWd54_1zKTf1EeJhB_-yShDIXFuWmVCg1IUMhJHgL4qDCawEiCH9epBeB7SqZyKru_HQa8jg-8WnOAFbkJ8y8B6vs_5QVZMEIyZ1cn1EjRIhQoWh8XCVKBBL1CjUCZif9Nn--tqVI29lUru028p04JN2iJc58bJtedJOH3QFx341-Qz_R1Rl4W35GH8U5rA0dvubUdYH4u3CeUyIzMDgv8qE1rrS9x61"/>
+</div>
+<span class="font-bold text-sm text-center">Aria Thorne</span>
+</div>
+<!-- Artist Circle -->
+<div class="flex-shrink-0 flex flex-col items-center gap-3 group cursor-pointer">
+<div class="w-32 h-32 rounded-full overflow-hidden border-2 border-transparent group-hover:border-primary transition-all p-1">
+<img class="w-full h-full object-cover rounded-full" data-alt="stylish man with glasses and a hat leaning against a graffiti wall in an urban setting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCmH5UH3-hy8CbmT_krCykGHffi0aumqHsapqYumDbaHDpU0SOYXVMruz85VgE3n4KMqbmJw58trhd8e4vePPLPbME7zpF1E3uh1zEzo8-i5vK10AhIvOJfbT7HHtVyNxGLtHzGEt_jOBMN3EHgFgQgrcqQsoETEzAOH7uSf1cNsBWIT_j_pDI2Ff_Jt85k_KAPACvoSUts6l1X4mETJDWz0l0ymmMxFYwQ9frAIw9ZA-NkcfJ3MOnxVjWuRsZB9figq7GYjbkVi3yQ"/>
+</div>
+<span class="font-bold text-sm text-center">KAI</span>
+</div>
+<!-- Artist Circle -->
+<div class="flex-shrink-0 flex flex-col items-center gap-3 group cursor-pointer">
+<div class="w-32 h-32 rounded-full overflow-hidden border-2 border-transparent group-hover:border-primary transition-all p-1">
+<img class="w-full h-full object-cover rounded-full" data-alt="expressive woman laughing with sunlight filtering through her hair in an outdoor setting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA8rc755n7Ft3N0-ojA5xexIAYp7Oo7qLl46eqqeRNAnlHwvK0AE1TEFGs3sKoD-ow6y32YyZ-yNOkM_OZQlVnA1XubPWKM_RkwRO5lMfmTG7GlDtBFdoPI_PkG8EYqIwmdPkY6miwSug11Oz4TkFZ2DwfZH1qdeAZLjHNsdVhz7xJGRBs4bUffmdjfUdque7u0toRRNKAshUYmEkGDFFdkldmjIukwdmmLzy1WKzwFdh32yquMoaAVyd-_PWGE5Lf3-0C7GMhHm-39"/>
+</div>
+<span class="font-bold text-sm text-center">Mila V</span>
+</div>
+<!-- Artist Circle -->
+<div class="flex-shrink-0 flex flex-col items-center gap-3 group cursor-pointer">
+<div class="w-32 h-32 rounded-full overflow-hidden border-2 border-transparent group-hover:border-primary transition-all p-1">
+<img class="w-full h-full object-cover rounded-full" data-alt="confident young man in a leather jacket standing in a modern architectural space" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAi3Lj8U0DuWABNz6NfXzPwIxS2-yExXxxYhzTzEutNU4yiZMTm-7g6-mTNaKuj9JHaybJ0ppBh-gUYgP2R9b-Xq78rIyearuCF0AxHY6ppwFQLec_MLWt1vAu8zLR3fcrnX632oabWojawNt04hoc5aZx8d-Yeq7YQZ1THHsbdTKNOwLSZSF90-sVfSJvNW1gpGUYE5797gjej05zM-wITF-aP_SKWhRpfMj0KL9dL1qUJHj0Xw4oQzWlpVbX7zFTtaAJv0NVyidwj"/>
+</div>
+<span class="font-bold text-sm text-center">Echo Unit</span>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar / Now Playing (Shared Component) -->
+<footer class="fixed bottom-0 left-0 w-full h-24 z-50 bg-[#192540]/60 backdrop-blur-[40px] flex items-center justify-between px-10 shadow-[0_-10px_40px_rgba(186,158,255,0.08)]">
+<!-- Track Info -->
+<div class="flex items-center gap-4 w-1/4">
+<div class="w-14 h-14 rounded-lg overflow-hidden shadow-2xl border border-white/5">
+<img alt="Now playing album art" class="w-full h-full object-cover" data-alt="neon purple album cover with abstract geometric shapes and light trails" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDfdZC2-NDNRODa4bJCKsKZn9w-YBVLJQbNe8nRJjz3AEzr840npGLJQGsqthsFhFD4KhNYNhI8Qgr121D7TrSPGklZg9Zb01RtMAYdZr2o74ap3E5_B-15YfD-V8d5TVIjPwoDLSmqpBVioODDSifM0SJMSJPLNYwaV3DT9UNKHItoWvT5v4VhlFTSqmmXfM4cr1P8N4XznEYM_8-dQeRYP0yU6qYX6qeJ6Z4d__6VjC5yivDHHm0NRrGCp-zn4ib7pEla93PVWRZj"/>
+</div>
+<div class="min-w-0">
+<h6 class="font-bold text-sm text-[#ba9eff] truncate">Midnight Echoes</h6>
+<p class="text-xs text-[#a3aac4] font-inter uppercase tracking-widest truncate">Luna Ray</p>
+</div>
+<button class="text-[#53ddfc] ml-2">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">favorite</span>
+</button>
+</div>
+<!-- Controls -->
+<div class="flex flex-col items-center gap-2 flex-1">
+<div class="flex items-center gap-6">
+<button class="text-[#a3aac4] hover:text-[#53ddfc] transition-transform cursor-pointer active:scale-90">
+<span class="material-symbols-outlined">shuffle</span>
+</button>
+<button class="text-on-surface hover:text-[#53ddfc] transition-transform cursor-pointer active:scale-90">
+<span class="material-symbols-outlined">skip_previous</span>
+</button>
+<button class="w-10 h-10 bg-[#53ddfc] text-[#003a45] rounded-full flex items-center justify-center hover:scale-110 transition-transform cursor-pointer active:scale-90">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</button>
+<button class="text-on-surface hover:text-[#53ddfc] transition-transform cursor-pointer active:scale-90">
+<span class="material-symbols-outlined">skip_next</span>
+</button>
+<button class="text-[#a3aac4] hover:text-[#53ddfc] transition-transform cursor-pointer active:scale-90">
+<span class="material-symbols-outlined">repeat</span>
+</button>
+</div>
+<div class="w-full max-w-md flex items-center gap-3">
+<span class="text-[10px] text-[#a3aac4] font-medium w-8">1:24</span>
+<div class="h-1 flex-1 bg-surface-container-highest rounded-full overflow-hidden relative">
+<div class="absolute left-0 top-0 h-full w-[40%] bg-[#53ddfc] shadow-[0_0_10px_#53ddfc]"></div>
+<div class="absolute left-[40%] top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg"></div>
+</div>
+<span class="text-[10px] text-[#a3aac4] font-medium w-8">3:45</span>
+</div>
+</div>
+<!-- Volume & Queue -->
+<div class="flex items-center justify-end gap-4 w-1/4">
+<button class="text-[#a3aac4] hover:text-[#53ddfc] transition-transform cursor-pointer active:scale-90">
+<span class="material-symbols-outlined">playlist_play</span>
+</button>
+<button class="text-[#a3aac4] hover:text-[#53ddfc] transition-transform cursor-pointer active:scale-90">
+<span class="material-symbols-outlined">devices</span>
+</button>
+<div class="flex items-center gap-2 group">
+<span class="material-symbols-outlined text-[#a3aac4]">volume_up</span>
+<div class="w-24 h-1 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full w-[70%] bg-[#a3aac4] group-hover:bg-[#53ddfc] transition-colors"></div>
+</div>
+</div>
+</div>
+</footer>
+</body></html>
