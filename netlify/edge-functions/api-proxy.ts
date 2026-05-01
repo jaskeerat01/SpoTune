@@ -101,7 +101,36 @@ export default async (request: Request, context: Context) => {
       return new Response('All proxy instances failed', { status: 502 });
     }
 
-    // Audio download proxy — streams remote audio with download headers
+    // Audio stream proxy: keeps playback in an <audio> element instead of a video iframe.
+    if (url.pathname.startsWith('/audiostream')) {
+      const targetUrl = url.searchParams.get('url');
+      if (!targetUrl) return new Response('Missing url parameter', { status: 400 });
+
+      try {
+        const headers: Record<string, string> = {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Gecko/20100101 Firefox/128.0',
+        };
+        const range = request.headers.get('range');
+        if (range) headers.Range = range;
+
+        const res = await fetch(targetUrl, { headers });
+        if (!res.ok) return new Response('Upstream error', { status: res.status });
+
+        const responseHeaders = new Headers();
+        for (const key of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
+          const value = res.headers.get(key);
+          if (value) responseHeaders.set(key, value);
+        }
+        responseHeaders.set('Access-Control-Allow-Origin', '*');
+        responseHeaders.set('Cache-Control', 'no-store');
+
+        return new Response(res.body, { status: res.status, headers: responseHeaders });
+      } catch {
+        return new Response('Audio proxy error', { status: 502 });
+      }
+    }
+
+    // Audio download proxy - streams remote audio with download headers
     if (url.pathname.startsWith('/dl-proxy')) {
       const targetUrl = url.searchParams.get('url');
       const fileName = url.searchParams.get('name') || 'audio';

@@ -1,7 +1,6 @@
 import "./style.css";
 import {
   search,
-  searchSuggestions,
   getHome,
   getNext,
   getBrowseDetails,
@@ -35,7 +34,8 @@ let searchDebounce: ReturnType<typeof setTimeout> | null = null;
 let progressInterval: ReturnType<typeof setInterval> | null = null;
 let isDownloading = false;
 
-const MAX_QUEUE = 100; // cap queue to limit memory
+const MAX_QUEUE = 50; // cap queue to limit memory
+const MAX_RENDERED_ROWS = 80;
 
 // ─── Utils ───
 function formatTime(sec: number): string {
@@ -49,33 +49,65 @@ function isSong(item: YTItem): item is SongItem {
   return "id" in item && "artists" in item && !("browseId" in item) && !("songCountText" in item);
 }
 
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;",
+  }[char]!));
+}
+
 const icons = {
     play: `<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">play_arrow</span>`,
     pause: `<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">pause</span>`,
 };
 
-// ─── Cookie-based Search History ───
-const SEARCH_HISTORY_COOKIE = "st_search_history";
-const MAX_HISTORY = 20;
+// ─── Listen History ───
+const LISTEN_HISTORY_KEY = "st_listen_history";
+const MAX_LISTEN_HISTORY = 40;
 
-function getSearchHistory(): string[] {
-  const match = document.cookie.split("; ").find(c => c.startsWith(SEARCH_HISTORY_COOKIE + "="));
-  if (!match) return [];
+type ListenHistoryItem = {
+  id: string;
+  title: string;
+  artist: string;
+  thumbnail: string;
+  playedAt: number;
+};
+
+function getListenHistory(): ListenHistoryItem[] {
   try {
-    return JSON.parse(decodeURIComponent(match.split("=")[1]));
+    const parsed = JSON.parse(localStorage.getItem(LISTEN_HISTORY_KEY) || "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is ListenHistoryItem =>
+        item &&
+        typeof item.id === "string" &&
+        typeof item.title === "string" &&
+        typeof item.artist === "string" &&
+        typeof item.playedAt === "number"
+      )
+      .slice(0, MAX_LISTEN_HISTORY);
   } catch {
     return [];
   }
 }
 
-function saveSearchQuery(query: string) {
-  const history = getSearchHistory().filter(q => q.toLowerCase() !== query.toLowerCase());
-  history.unshift(query);
-  if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
-  const encoded = encodeURIComponent(JSON.stringify(history));
-  // Cookie persists for 1 year
-  const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toUTCString();
-  document.cookie = `${SEARCH_HISTORY_COOKIE}=${encoded}; expires=${expires}; path=/; SameSite=Lax`;
+function saveListen(song: SongItem) {
+  const artist = song.artists?.map((a) => a.name).filter(Boolean).join(", ") || "";
+  const item: ListenHistoryItem = {
+    id: song.id,
+    title: song.title,
+    artist,
+    thumbnail: song.thumbnail,
+    playedAt: Date.now(),
+  };
+
+  const history = getListenHistory().filter((entry) => entry.id !== item.id);
+  history.unshift(item);
+  if (history.length > MAX_LISTEN_HISTORY) history.length = MAX_LISTEN_HISTORY;
+  localStorage.setItem(LISTEN_HISTORY_KEY, JSON.stringify(history));
 }
 
 /** Pick N random unique items from an array */
@@ -85,17 +117,36 @@ function pickRandom<T>(arr: T[], n: number): T[] {
 }
 
 async function getRecommendedSections(): Promise<HomeSection[]> {
-  const history = getSearchHistory();
+  const history = getListenHistory();
   if (!history.length) {
-    // New user fallback — generic suggestions
+    // New user fallback: generic suggestions
     const items = await search("top hits 2026").catch(() => []);
     const songs = items.filter(isSong).slice(0, 10);
     return songs.length ? [{ title: "Popular right now", items: songs }] : [];
   }
 
-  // Pick up to 3 random past searches
-  const picks = pickRandom(history, Math.min(3, history.length));
+  // Pick a few recent listen seeds without keeping a large recommendation cache.
   const sections: HomeSection[] = [];
+  const recentlyPlayed = history.slice(0, 8).map((item) => ({
+    id: item.id,
+    title: item.title,
+    artists: [{ name: item.artist }],
+    thumbnail: item.thumbnail,
+  }) as SongItem);
+  if (recentlyPlayed.length) {
+    sections.push({ title: "Recently played", items: recentlyPlayed });
+  }
+
+  const artistSeeds = Array.from(new Set(
+    history
+      .flatMap((item) => item.artist.split(",").map((artist) => artist.trim()))
+      .filter(Boolean)
+  )).slice(0, 8);
+  const songSeeds = history
+    .filter((item) => item.title && item.artist)
+    .map((item) => `${item.title} ${item.artist}`);
+  const picks = pickRandom([...artistSeeds, ...songSeeds], Math.min(3, artistSeeds.length + songSeeds.length));
+  const listenedIds = new Set(history.map((item) => item.id));
 
   const results = await Promise.allSettled(
     picks.map(q => search(q).then(items => ({ query: q, items })))
@@ -103,10 +154,13 @@ async function getRecommendedSections(): Promise<HomeSection[]> {
 
   for (const result of results) {
     if (result.status === "fulfilled") {
-      const songs = result.value.items.filter(isSong).slice(0, 10);
+      const songs = result.value.items
+        .filter(isSong)
+        .filter((song) => !listenedIds.has(song.id))
+        .slice(0, 10);
       if (songs.length) {
         sections.push({
-          title: `Because you searched "${result.value.query}"`,
+          title: `Because you listened to ${result.value.query}`,
           items: songs,
         });
       }
@@ -211,7 +265,7 @@ async function loadHomePage() {
 
     for (const section of sections) {
       html += `<section class="sp-section">
-        <h2 class="sp-section-title">${section.title}</h2>
+        <h2 class="sp-section-title">${escapeHtml(section.title)}</h2>
         <div class="sp-grid">${section.items.slice(0, 8).map(item => renderCard(item)).join("")}</div>
       </section>`;
     }
@@ -240,14 +294,15 @@ function renderCard(item: YTItem) {
     const dataId = isSong(item) ? item.id : ("browseId" in item ? item.browseId : item.id);
     const dataType = isSong(item) ? "song" : "playlist";
     const subtitle = getSubtitle(item);
+    const title = getTitle(item);
     return `
-    <div class="sp-card st-card" data-id="${dataId}" data-type="${dataType}">
+    <div class="sp-card st-card" data-id="${escapeHtml(dataId)}" data-type="${dataType}">
         <div class="sp-card-img">
-            <img src="${getThumb(item)}" alt="${getTitle(item)}" loading="lazy" />
+            <img src="${escapeHtml(getThumb(item))}" alt="${escapeHtml(title)}" loading="lazy" decoding="async" referrerpolicy="no-referrer" />
             <div class="sp-card-play"><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">play_arrow</span></div>
         </div>
-        <h4 class="sp-card-title">${getTitle(item)}</h4>
-        ${subtitle ? `<p class="sp-card-sub">${subtitle}</p>` : ''}
+        <h4 class="sp-card-title">${escapeHtml(title)}</h4>
+        ${subtitle ? `<p class="sp-card-sub">${escapeHtml(subtitle)}</p>` : ''}
     </div>`;
 }
 
@@ -255,12 +310,12 @@ function renderListRow(item: YTItem, index: number) {
     const dataId = isSong(item) ? item.id : ("browseId" in item ? item.browseId : item.id);
     const dataType = isSong(item) ? "song" : "playlist";
     return `
-    <div class="sp-row st-card" data-id="${dataId}" data-type="${dataType}">
+    <div class="sp-row st-card" data-id="${escapeHtml(dataId)}" data-type="${dataType}">
         <span class="sp-row-num">${String(index + 1).padStart(2, '0')}</span>
-        <img class="sp-row-img" src="${getThumb(item)}" alt="" loading="lazy" />
+        <img class="sp-row-img" src="${escapeHtml(getThumb(item))}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" />
         <div class="sp-row-text">
-            <h5 class="sp-row-title">${getTitle(item)}</h5>
-            <p class="sp-row-sub">${getSubtitle(item)}</p>
+            <h5 class="sp-row-title">${escapeHtml(getTitle(item))}</h5>
+            <p class="sp-row-sub">${escapeHtml(getSubtitle(item))}</p>
         </div>
         <button class="sp-row-play"><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1; font-size: 18px;">play_arrow</span></button>
     </div>`;
@@ -269,23 +324,20 @@ function renderListRow(item: YTItem, index: number) {
 
 // ─── Search ───
 async function performSearch(query: string) {
-  // Save this search to cookie history
-  saveSearchQuery(query);
-
   const pc = document.getElementById("page-content")!;
   pc.innerHTML = `<div class="sp-loading"><div class="loading-spinner"></div><p>Searching "${query}"...</p></div>`;
 
   try {
     const results = await search(query);
     if (!results.length) {
-      pc.innerHTML = `<div class="sp-empty">No results for "${query}"</div>`;
+      pc.innerHTML = `<div class="sp-empty">No results for "${escapeHtml(query)}"</div>`;
       return;
     }
-    const songs = results.filter(isSong) as SongItem[];
+    const songs = (results.filter(isSong) as SongItem[]).slice(0, MAX_RENDERED_ROWS);
     queue = songs;
     pc.innerHTML = `
       <div class="sp-page">
-        <h2 class="sp-page-title">Results for "${query}"</h2>
+        <h2 class="sp-page-title">Results for "${escapeHtml(query)}"</h2>
         <div class="sp-list">${songs.map((s, i) => renderListRow(s, i)).join("")}</div>
       </div>
     `;
@@ -303,14 +355,15 @@ async function loadBrowsePage(browseId: string) {
 
   try {
     const { title, items } = await getBrowseDetails(browseId);
-    queue = items;
+    queue = items.slice(0, MAX_QUEUE);
+    const renderedItems = items.slice(0, MAX_RENDERED_ROWS);
     pc.innerHTML = `
       <div class="sp-page">
         <div class="sp-page-header">
             <button id="btn-back" class="sp-ctrl-btn sp-back-btn" aria-label="Back"><span class="material-symbols-outlined">arrow_back</span></button>
-            <h2 class="sp-page-title">${title}</h2>
+            <h2 class="sp-page-title">${escapeHtml(title)}</h2>
         </div>
-        <div class="sp-list">${items.map((s, i) => renderListRow(s, i)).join("")}</div>
+        <div class="sp-list">${renderedItems.map((s, i) => renderListRow(s, i)).join("")}</div>
       </div>
     `;
     document.getElementById("btn-back")?.addEventListener("click", () => loadHomePage());
@@ -368,30 +421,33 @@ function bindEvents() {
 }
 
 function bindCardClicks() {
-  document.querySelectorAll(".st-card").forEach((el) => {
-    el.addEventListener("click", async () => {
-      const id = el.getAttribute("data-id") || "";
-      const type = el.getAttribute("data-type");
+  const pc = document.getElementById("page-content");
+  if (!pc) return;
+  pc.onclick = (event) => {
+    const el = (event.target as HTMLElement).closest(".st-card") as HTMLElement | null;
+    if (!el) return;
 
-      if (type === "song") {
-        const thumb = (el.querySelector("img") as HTMLImageElement)?.src || "";
-        const titleText = el.querySelector("h4, h5")?.textContent || "";
-        const subtitle = el.querySelector(".sp-card-sub, .sp-row-sub")?.textContent || "";
-        const song: SongItem = { id, title: titleText, artists: [{ name: subtitle }], thumbnail: thumb };
-        
-        const idx = queue.findIndex(q => q.id === song.id);
-        if (idx !== -1) {
-            queueIndex = idx;
-        } else {
-            queue = [song];
-            queueIndex = 0;
-        }
-        playSong(song);
+    const id = el.getAttribute("data-id") || "";
+    const type = el.getAttribute("data-type");
+
+    if (type === "song") {
+      const thumb = (el.querySelector("img") as HTMLImageElement)?.src || "";
+      const titleText = el.querySelector("h4, h5")?.textContent || "";
+      const subtitle = el.querySelector(".sp-card-sub, .sp-row-sub")?.textContent || "";
+      const song: SongItem = { id, title: titleText, artists: [{ name: subtitle }], thumbnail: thumb };
+
+      const idx = queue.findIndex(q => q.id === song.id);
+      if (idx !== -1) {
+          queueIndex = idx;
       } else {
-        loadBrowsePage(id);
+          queue = [song];
+          queueIndex = 0;
       }
-    });
-  });
+      void playSong(song);
+    } else {
+      void loadBrowsePage(id);
+    }
+  };
 }
 
 // ─── Player Methods ───
@@ -422,12 +478,20 @@ async function playSong(song: SongItem) {
           playNext();
         }
       });
+
+      setOnError(() => {
+        isPlaying = false;
+        updatePlayButton();
+        stopProgressTracking();
+      });
     }
 
     const vol = (document.getElementById("st-volume-slider") as HTMLInputElement)?.valueAsNumber || 80;
     setVolume(vol);
-    loadVideo(song.id);
-    setTimeout(() => loadLyrics(song), 1000);
+    await loadVideo(song.id);
+    saveListen(song);
+    prepareLyricsForSong();
+    if (lyricsOpen) void loadLyrics(song);
 
     if (queue.length <= 1) {
       getNext(song.id).then((items) => {
@@ -437,13 +501,12 @@ async function playSong(song: SongItem) {
           if (queueIndex === -1) { queue.unshift(song); queueIndex = 0; }
           if (queue.length > MAX_QUEUE) queue.length = MAX_QUEUE;
         }
-      });
+      }).catch(() => {});
     } else {
       queueIndex = queue.findIndex((s) => s.id === song.id);
     }
-  } catch (e) {
-    console.error("Playback error:", e);
-    document.getElementById("st-player-title")!.textContent = `⚠ Error`;
+  } catch {
+    document.getElementById("st-player-title")!.textContent = `Playback unavailable`;
     isPlaying = false;
     updatePlayButton();
   }
@@ -511,7 +574,7 @@ function startProgressTracking() {
     if (lyricsOpen && lyricsData?.synced && lyricsData.sentences) {
         updateActiveLyricLine(cur * 1000);
     }
-  }, 250);
+  }, 500);
 }
 
 // ─── Download ───
@@ -566,14 +629,25 @@ async function downloadCurrentSong() {
 }
 
 // ─── Lyrics ───
+function prepareLyricsForSong() {
+  if (lyricsData?.sentences) lyricsData.sentences.clear();
+  lyricsData = null;
+  _cachedLyricLines = null;
+  _lyricTimestamps = [];
+  _lastActiveLyricIdx = -1;
+
+  const body = document.getElementById("lyrics-body");
+  if (body) {
+    body.innerHTML = currentSong && lyricsOpen
+      ? `<div class="sp-loading"><div class="loading-spinner"></div></div>`
+      : `<div class="empty-state"><div class="empty-text">Open lyrics to load</div></div>`;
+  }
+}
+
 async function loadLyrics(song: SongItem) {
   const body = document.getElementById("lyrics-body")!;
-  // Free old lyrics data before loading new
-  if (lyricsData) {
-    if (lyricsData.sentences) lyricsData.sentences.clear();
-    lyricsData = null;
-  }
-  _cachedLyricLines = null; // clear cached NodeList
+  if (!lyricsOpen) return;
+  prepareLyricsForSong();
   body.innerHTML = `<div class="sp-loading"><div class="loading-spinner"></div></div>`;
 
   const artist = song.artists?.[0]?.name || "";
@@ -587,30 +661,38 @@ async function loadLyrics(song: SongItem) {
 
   if (lyricsData.synced && lyricsData.sentences) {
     const entries = Array.from(lyricsData.sentences.entries()).sort((a, b) => a[0] - b[0]);
-    body.innerHTML = entries.map(([ts, text]) => `<div class="lyrics-line" data-ts="${ts}">${text || "♫"}</div>`).join("");
+    body.innerHTML = entries.map(([ts, text]) => `<div class="lyrics-line" data-ts="${ts}">${escapeHtml(text || "*")}</div>`).join("");
   } else {
-    body.innerHTML = lyricsData.text.split("\n").map((line) => `<div class="lyrics-line">${line || "&nbsp;"}</div>`).join("");
+    body.innerHTML = lyricsData.text.split("\n").map((line) => `<div class="lyrics-line">${line ? escapeHtml(line) : "&nbsp;"}</div>`).join("");
   }
   _cachedLyricLines = null; // force re-cache on next sync
 }
 
 // Cache lyric line elements to avoid querySelectorAll every 250ms
 let _cachedLyricLines: NodeListOf<Element> | null = null;
+let _lyricTimestamps: number[] = [];
 let _lastActiveLyricIdx = -1;
 
 function updateActiveLyricLine(currentMs: number) {
   if (!_cachedLyricLines) {
     _cachedLyricLines = document.querySelectorAll(".lyrics-line[data-ts]");
+    _lyricTimestamps = Array.from(_cachedLyricLines, (line) => Number(line.getAttribute("data-ts")) || 0);
     _lastActiveLyricIdx = -1;
   }
   const lines = _cachedLyricLines;
   if (!lines.length) return;
 
-  // Binary-style scan: find the last line with ts <= currentMs
   let newActive = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (Number(lines[i].getAttribute("data-ts")) <= currentMs) newActive = i;
-    else break; // timestamps are sorted, stop early
+  let low = 0;
+  let high = _lyricTimestamps.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (_lyricTimestamps[mid] <= currentMs) {
+      newActive = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
   }
 
   // Only update DOM if the active line changed
@@ -627,7 +709,7 @@ function updateActiveLyricLine(currentMs: number) {
     const el = lines[newActive] as HTMLElement;
     el.classList.remove("text-on-surface-variant", "opacity-50");
     el.classList.add("text-primary", "text-xl", "opacity-100");
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.scrollIntoView({ behavior: "auto", block: "center" });
   }
   _lastActiveLyricIdx = newActive;
 }
@@ -636,6 +718,7 @@ function toggleLyrics() {
   lyricsOpen = !lyricsOpen;
   document.getElementById("lyrics-panel")!.classList.toggle("open", lyricsOpen);
   document.getElementById("btn-lyrics")!.classList.toggle("text-primary", lyricsOpen);
+  if (lyricsOpen && currentSong && !lyricsData) void loadLyrics(currentSong);
 }
 
 // Kickoff

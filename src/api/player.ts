@@ -1,10 +1,13 @@
 /**
- * YouTube IFrame Player API wrapper.
- * This is the most reliable way to play YouTube audio in a web browser.
- * Uses a hidden YouTube video player for audio-only playback.
+ * Lightweight audio-first player.
+ *
+ * Direct audio streams use far less memory than a hidden YouTube video iframe.
+ * The iframe player is kept as a fallback for tracks whose stream URL cannot be
+ * resolved by the proxy chain.
  */
 
-// YouTube IFrame API types
+import { getStreamUrl } from './youtube';
+
 declare global {
   interface Window {
     YT: typeof YT;
@@ -20,7 +23,6 @@ declare namespace YT {
     pauseVideo(): void;
     seekTo(seconds: number, allowSeekAhead: boolean): void;
     setVolume(volume: number): void;
-    getVolume(): number;
     getCurrentTime(): number;
     getDuration(): number;
     getPlayerState(): number;
@@ -37,19 +39,7 @@ declare namespace YT {
       onError?: (event: { data: number }) => void;
     };
   }
-  enum PlayerState {
-    UNSTARTED = -1,
-    ENDED = 0,
-    PLAYING = 1,
-    PAUSED = 2,
-    BUFFERING = 3,
-    CUED = 5,
-  }
 }
-
-let player: YT.Player | null = null;
-let apiReady = false;
-let readyCallback: (() => void) | null = null;
 
 const STATE = {
   ENDED: 0,
@@ -58,15 +48,50 @@ const STATE = {
   BUFFERING: 3,
 };
 
-/** Load the YouTube IFrame API script */
-export function initYTPlayer(): Promise<void> {
-  return new Promise((resolve) => {
-    if (apiReady && player) {
-      resolve();
-      return;
-    }
+type Mode = 'audio' | 'iframe';
 
-    // Create hidden container for the player
+let mode: Mode = 'audio';
+let audio: HTMLAudioElement | null = null;
+let player: YT.Player | null = null;
+let apiReady = false;
+let iframeReadyPromise: Promise<void> | null = null;
+let onStateChangeCallback: ((state: number) => void) | null = null;
+let onErrorCallback: ((code: number) => void) | null = null;
+let currentVideoId = '';
+let fallingBack = false;
+
+export function initYTPlayer(): Promise<void> {
+  ensureAudio();
+  return Promise.resolve();
+}
+
+function ensureAudio(): HTMLAudioElement {
+  if (audio) return audio;
+
+  audio = new Audio();
+  audio.preload = 'none';
+  audio.crossOrigin = 'anonymous';
+
+  audio.addEventListener('playing', () => onStateChangeCallback?.(STATE.PLAYING));
+  audio.addEventListener('pause', () => {
+    if (!audio?.ended) onStateChangeCallback?.(STATE.PAUSED);
+  });
+  audio.addEventListener('ended', () => onStateChangeCallback?.(STATE.ENDED));
+  audio.addEventListener('waiting', () => onStateChangeCallback?.(STATE.BUFFERING));
+  audio.addEventListener('error', () => {
+    const code = audio?.error?.code || 0;
+    onErrorCallback?.(code);
+    if (mode === 'audio' && currentVideoId && !fallingBack) void fallbackToIframe(currentVideoId);
+  });
+
+  return audio;
+}
+
+async function ensureIframePlayer(): Promise<void> {
+  if (player) return;
+  if (iframeReadyPromise) return iframeReadyPromise;
+
+  iframeReadyPromise = new Promise((resolve) => {
     let container = document.getElementById('yt-player-container');
     if (!container) {
       container = document.createElement('div');
@@ -79,62 +104,48 @@ export function initYTPlayer(): Promise<void> {
       container.appendChild(playerDiv);
     }
 
-    if (apiReady) {
-      createPlayer(resolve);
+    const createPlayer = () => {
+      player = new window.YT.Player('yt-hidden-player', {
+        height: '1',
+        width: '1',
+        playerVars: {
+          autoplay: 0,
+          controls: 0,
+          disablekb: 1,
+          fs: 0,
+          iv_load_policy: 3,
+          modestbranding: 1,
+          playsinline: 1,
+          rel: 0,
+        },
+        events: {
+          onReady: () => resolve(),
+          onStateChange: (event) => onStateChangeCallback?.(event.data),
+          onError: (event) => onErrorCallback?.(event.data),
+        },
+      });
+    };
+
+    if (apiReady && window.YT) {
+      createPlayer();
       return;
     }
 
-    readyCallback = () => createPlayer(resolve);
+    window.onYouTubeIframeAPIReady = () => {
+      apiReady = true;
+      createPlayer();
+    };
 
-    // Load the IFrame API
     if (!document.getElementById('yt-iframe-api')) {
       const tag = document.createElement('script');
       tag.id = 'yt-iframe-api';
       tag.src = 'https://www.youtube.com/iframe_api';
       document.head.appendChild(tag);
     }
-
-    window.onYouTubeIframeAPIReady = () => {
-      apiReady = true;
-      if (readyCallback) readyCallback();
-    };
   });
-}
 
-function createPlayer(onReady: () => void) {
-  if (player) {
-    onReady();
-    return;
-  }
-  player = new window.YT.Player('yt-hidden-player', {
-    height: '1',
-    width: '1',
-    playerVars: {
-      autoplay: 0,
-      controls: 0,
-      disablekb: 1,
-      fs: 0,
-      iv_load_policy: 3,
-      modestbranding: 1,
-      playsinline: 1,
-      rel: 0,
-    },
-    events: {
-      onReady: () => onReady(),
-      onStateChange: (event) => {
-        if (onStateChangeCallback) onStateChangeCallback(event.data);
-      },
-      onError: (event) => {
-        console.warn('YT Player error:', event.data);
-        if (onErrorCallback) onErrorCallback(event.data);
-      },
-    },
-  });
+  return iframeReadyPromise;
 }
-
-// Callbacks for player events
-let onStateChangeCallback: ((state: number) => void) | null = null;
-let onErrorCallback: ((code: number) => void) | null = null;
 
 export function setOnStateChange(cb: (state: number) => void) {
   onStateChangeCallback = cb;
@@ -144,37 +155,73 @@ export function setOnError(cb: (code: number) => void) {
   onErrorCallback = cb;
 }
 
-export function loadVideo(videoId: string) {
+export async function loadVideo(videoId: string) {
+  const audioEl = ensureAudio();
+  currentVideoId = videoId;
+  fallingBack = false;
+
+  try {
+    const streamUrl = await getStreamUrl(videoId);
+    mode = 'audio';
+    player?.pauseVideo();
+    audioEl.src = streamUrl;
+    audioEl.load();
+    await audioEl.play();
+  } catch {
+    await fallbackToIframe(videoId);
+  }
+}
+
+async function fallbackToIframe(videoId: string) {
+  fallingBack = true;
+  if (audio) {
+    audio.removeAttribute('src');
+    audio.load();
+  }
+  mode = 'iframe';
+  await ensureIframePlayer();
   player?.loadVideoById(videoId);
+  fallingBack = false;
 }
 
 export function play() {
-  player?.playVideo();
+  if (mode === 'iframe') player?.playVideo();
+  else void audio?.play();
 }
 
 export function pause() {
-  player?.pauseVideo();
+  if (mode === 'iframe') player?.pauseVideo();
+  else audio?.pause();
 }
 
 export function seekTo(seconds: number) {
-  player?.seekTo(seconds, true);
+  if (mode === 'iframe') {
+    player?.seekTo(seconds, true);
+    return;
+  }
+  if (audio && Number.isFinite(seconds)) audio.currentTime = seconds;
 }
 
 export function setVolume(vol: number) {
-  // YT uses 0-100
-  player?.setVolume(vol);
+  const clamped = Math.min(100, Math.max(0, vol));
+  if (audio) audio.volume = clamped / 100;
+  player?.setVolume(clamped);
 }
 
 export function getCurrentTime(): number {
-  return player?.getCurrentTime() || 0;
+  return mode === 'iframe' ? player?.getCurrentTime() || 0 : audio?.currentTime || 0;
 }
 
 export function getDuration(): number {
-  return player?.getDuration() || 0;
+  return mode === 'iframe' ? player?.getDuration() || 0 : audio?.duration || 0;
 }
 
 export function getPlayerState(): number {
-  return player?.getPlayerState() ?? -1;
+  if (mode === 'iframe') return player?.getPlayerState() ?? -1;
+  if (!audio) return -1;
+  if (audio.ended) return STATE.ENDED;
+  if (!audio.paused) return STATE.PLAYING;
+  return STATE.PAUSED;
 }
 
 export function isPlaying(): boolean {

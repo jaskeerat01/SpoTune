@@ -59,6 +59,16 @@ function fixThumbUrl(url: string): string {
   return url;
 }
 
+function pickLeanAudioFormat<T extends { bitrate?: number; url?: string }>(formats: T[]): T | undefined {
+  const TARGET_BITRATE = 128000;
+  return formats
+    .filter(format => format.url)
+    .sort((a, b) =>
+      Math.abs((a.bitrate || TARGET_BITRATE) - TARGET_BITRATE) -
+      Math.abs((b.bitrate || TARGET_BITRATE) - TARGET_BITRATE)
+    )[0];
+}
+
 // ───── Parsers ─────
 
 function parseSong(renderer: any): SongItem | null {
@@ -239,8 +249,7 @@ async function tryProxyInstances(videoId: string): Promise<string | null> {
       // Piped format: audioStreams
       const audioStreams = data?.audioStreams || [];
       if (audioStreams.length) {
-        const sorted = [...audioStreams].sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
-        const pick = sorted[Math.min(1, sorted.length - 1)];
+        const pick = pickLeanAudioFormat(audioStreams);
         if (pick?.url) return proxyStreamUrl(pick.url);
       }
       if (data?.hls) return proxyStreamUrl(data.hls);
@@ -258,10 +267,7 @@ async function tryProxyInstances(videoId: string): Promise<string | null> {
       const formats = data?.adaptiveFormats || [];
       const audioFormats = formats.filter((f: any) => f.type?.startsWith('audio/'));
       if (audioFormats.length) {
-        // Pick best audio
-        const best = audioFormats.reduce((a: any, b: any) =>
-          (a.bitrate || 0) > (b.bitrate || 0) ? a : b
-        );
+        const best = pickLeanAudioFormat(audioFormats);
         if (best?.url) return proxyStreamUrl(best.url);
       }
       // Fallback to any format with url
@@ -312,7 +318,7 @@ async function tryYTPlayer(videoId: string, clientConfig: {
       ...(data?.streamingData?.formats || []),
     ];
     // Prefer audio-only format with direct URL (no signatureCipher)
-    const audio = formats.find((f: any) => f.url && f.mimeType?.startsWith('audio/'));
+    const audio = pickLeanAudioFormat(formats.filter((f: any) => f.mimeType?.startsWith('audio/')));
     if (audio?.url) return audio.url;
     // Any format with direct URL
     const anyDirect = formats.find((f: any) => f.url);
