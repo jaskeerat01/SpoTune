@@ -1,11 +1,9 @@
 import "./style.css";
 import {
   search,
-  searchSuggestions,
   getHome,
   getNext,
   getBrowseDetails,
-  getDownloadUrl,
 } from "./api/youtube";
 import { getLyrics } from "./api/lyrics";
 import {
@@ -33,7 +31,9 @@ let lyricsData: LyricsResult | null = null;
 let lyricsOpen = false;
 let searchDebounce: ReturnType<typeof setTimeout> | null = null;
 let progressInterval: ReturnType<typeof setInterval> | null = null;
-let isDownloading = false;
+
+const MAX_QUEUE = 50; // cap queue to limit memory
+const MAX_RENDERED_ROWS = 80;
 
 // ─── Utils ───
 function formatTime(sec: number): string {
@@ -47,10 +47,133 @@ function isSong(item: YTItem): item is SongItem {
   return "id" in item && "artists" in item && !("browseId" in item) && !("songCountText" in item);
 }
 
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;",
+  }[char]!));
+}
+
 const icons = {
     play: `<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">play_arrow</span>`,
     pause: `<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">pause</span>`,
 };
+
+// ─── Listen History ───
+const LISTEN_HISTORY_KEY = "st_listen_history";
+const MAX_LISTEN_HISTORY = 40;
+
+type ListenHistoryItem = {
+  id: string;
+  title: string;
+  artist: string;
+  thumbnail: string;
+  playedAt: number;
+};
+
+function getListenHistory(): ListenHistoryItem[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LISTEN_HISTORY_KEY) || "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is ListenHistoryItem =>
+        item &&
+        typeof item.id === "string" &&
+        typeof item.title === "string" &&
+        typeof item.artist === "string" &&
+        typeof item.playedAt === "number"
+      )
+      .slice(0, MAX_LISTEN_HISTORY);
+  } catch {
+    return [];
+  }
+}
+
+function saveListen(song: SongItem) {
+  const artist = song.artists?.map((a) => a.name).filter(Boolean).join(", ") || "";
+  const item: ListenHistoryItem = {
+    id: song.id,
+    title: song.title,
+    artist,
+    thumbnail: song.thumbnail,
+    playedAt: Date.now(),
+  };
+
+  const history = getListenHistory().filter((entry) => entry.id !== item.id);
+  history.unshift(item);
+  if (history.length > MAX_LISTEN_HISTORY) history.length = MAX_LISTEN_HISTORY;
+  localStorage.setItem(LISTEN_HISTORY_KEY, JSON.stringify(history));
+}
+
+/** Pick N random unique items from an array */
+function pickRandom<T>(arr: T[], n: number): T[] {
+  const shuffled = [...arr].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, n);
+}
+
+async function getRecommendedSections(): Promise<HomeSection[]> {
+  const history = getListenHistory();
+  if (!history.length) {
+    // New user fallback: generic suggestions
+    const items = await search("top hits 2026").catch(() => []);
+    const songs = items.filter(isSong).slice(0, 10);
+    return songs.length ? [{ title: "Popular right now", items: songs }] : [];
+  }
+
+  // Pick a few recent listen seeds without keeping a large recommendation cache.
+  const sections: HomeSection[] = [];
+  const recentlyPlayed = history.slice(0, 8).map((item) => ({
+    id: item.id,
+    title: item.title,
+    artists: [{ name: item.artist }],
+    thumbnail: item.thumbnail,
+  }) as SongItem);
+  if (recentlyPlayed.length) {
+    sections.push({ title: "Recently played", items: recentlyPlayed });
+  }
+
+  const artistSeeds = Array.from(new Set(
+    history
+      .flatMap((item) => item.artist.split(",").map((artist) => artist.trim()))
+      .filter(Boolean)
+  )).slice(0, 8);
+  const songSeeds = history
+    .filter((item) => item.title && item.artist)
+    .map((item) => `${item.title} ${item.artist}`);
+  const picks = pickRandom([...artistSeeds, ...songSeeds], Math.min(3, artistSeeds.length + songSeeds.length));
+  const listenedIds = new Set(history.map((item) => item.id));
+
+  const results = await Promise.allSettled(
+    picks.map(q => search(q).then(items => ({ query: q, items })))
+  );
+
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      const songs = result.value.items
+        .filter(isSong)
+        .filter((song) => !listenedIds.has(song.id))
+        .slice(0, 10);
+      if (songs.length) {
+        sections.push({
+          title: `Because you listened to ${result.value.query}`,
+          items: songs,
+        });
+      }
+    }
+  }
+
+  // If all searches failed, fall back to generic
+  if (!sections.length) {
+    const items = await search("trending music").catch(() => []);
+    const songs = items.filter(isSong).slice(0, 10);
+    if (songs.length) sections.push({ title: "Trending now", items: songs });
+  }
+
+  return sections;
+}
 
 // ─── Render App Shell ───
 function renderApp() {
@@ -77,7 +200,7 @@ function renderApp() {
     </div>
 </div>
 
-<footer class="sp-player">
+<footer class="sp-player is-hidden" id="sp-player">
     <div class="sp-progress-wrap">
         <span id="st-time-current" class="sp-time">0:00</span>
         <div id="st-progress-bar" class="sp-progress-track">
@@ -99,7 +222,6 @@ function renderApp() {
             <button id="st-btn-next" class="sp-ctrl-btn" aria-label="Next"><span class="material-symbols-outlined">skip_next</span></button>
         </div>
         <div class="sp-player-extra">
-            <button id="btn-download" class="sp-ctrl-btn" aria-label="Download" title="Download (128kbps)"><span class="material-symbols-outlined">download</span></button>
             <button id="btn-lyrics" class="sp-ctrl-btn" aria-label="Lyrics"><span class="material-symbols-outlined">lyrics</span></button>
             <div class="sp-volume-wrap">
                 <span class="material-symbols-outlined sp-vol-icon">volume_up</span>
@@ -120,15 +242,19 @@ async function loadHomePage() {
   pc.innerHTML = `<div class="sp-loading"><div class="loading-spinner"></div><p>Loading...</p></div>`;
 
   try {
-    const [sections, suggestedItems] = await Promise.all([
+    // Fetch YT Music home sections + personalized recommendations in parallel
+    const [sections, recommendedSections] = await Promise.all([
       getHome(),
-      search("top hits 2026").catch(() => [])
+      getRecommendedSections(),
     ]);
-    const suggestedSongs = suggestedItems.filter(isSong).slice(0, 10);
-    if (suggestedSongs.length > 0) {
-      sections.push({ title: "Suggested for you", items: suggestedSongs });
-    }
+
+    // Append personalized sections after the YT Music sections
+    sections.push(...recommendedSections);
+
     if (!sections.length) throw new Error("No sections");
+
+    // Limit total sections to keep DOM lean
+    if (sections.length > 6) sections.length = 6;
 
     const hour = new Date().getHours();
     const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
@@ -136,7 +262,7 @@ async function loadHomePage() {
 
     for (const section of sections) {
       html += `<section class="sp-section">
-        <h2 class="sp-section-title">${section.title}</h2>
+        <h2 class="sp-section-title">${escapeHtml(section.title)}</h2>
         <div class="sp-grid">${section.items.slice(0, 8).map(item => renderCard(item)).join("")}</div>
       </section>`;
     }
@@ -165,14 +291,15 @@ function renderCard(item: YTItem) {
     const dataId = isSong(item) ? item.id : ("browseId" in item ? item.browseId : item.id);
     const dataType = isSong(item) ? "song" : "playlist";
     const subtitle = getSubtitle(item);
+    const title = getTitle(item);
     return `
-    <div class="sp-card st-card" data-id="${dataId}" data-type="${dataType}">
+    <div class="sp-card st-card" data-id="${escapeHtml(dataId)}" data-type="${dataType}">
         <div class="sp-card-img">
-            <img src="${getThumb(item)}" alt="${getTitle(item)}" loading="lazy" />
+            <img src="${escapeHtml(getThumb(item))}" alt="${escapeHtml(title)}" loading="lazy" decoding="async" referrerpolicy="no-referrer" />
             <div class="sp-card-play"><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">play_arrow</span></div>
         </div>
-        <h4 class="sp-card-title">${getTitle(item)}</h4>
-        ${subtitle ? `<p class="sp-card-sub">${subtitle}</p>` : ''}
+        <h4 class="sp-card-title">${escapeHtml(title)}</h4>
+        ${subtitle ? `<p class="sp-card-sub">${escapeHtml(subtitle)}</p>` : ''}
     </div>`;
 }
 
@@ -180,12 +307,12 @@ function renderListRow(item: YTItem, index: number) {
     const dataId = isSong(item) ? item.id : ("browseId" in item ? item.browseId : item.id);
     const dataType = isSong(item) ? "song" : "playlist";
     return `
-    <div class="sp-row st-card" data-id="${dataId}" data-type="${dataType}">
+    <div class="sp-row st-card" data-id="${escapeHtml(dataId)}" data-type="${dataType}">
         <span class="sp-row-num">${String(index + 1).padStart(2, '0')}</span>
-        <img class="sp-row-img" src="${getThumb(item)}" alt="" loading="lazy" />
+        <img class="sp-row-img" src="${escapeHtml(getThumb(item))}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" />
         <div class="sp-row-text">
-            <h5 class="sp-row-title">${getTitle(item)}</h5>
-            <p class="sp-row-sub">${getSubtitle(item)}</p>
+            <h5 class="sp-row-title">${escapeHtml(getTitle(item))}</h5>
+            <p class="sp-row-sub">${escapeHtml(getSubtitle(item))}</p>
         </div>
         <button class="sp-row-play"><span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1; font-size: 18px;">play_arrow</span></button>
     </div>`;
@@ -200,14 +327,14 @@ async function performSearch(query: string) {
   try {
     const results = await search(query);
     if (!results.length) {
-      pc.innerHTML = `<div class="sp-empty">No results for "${query}"</div>`;
+      pc.innerHTML = `<div class="sp-empty">No results for "${escapeHtml(query)}"</div>`;
       return;
     }
-    const songs = results.filter(isSong) as SongItem[];
+    const songs = (results.filter(isSong) as SongItem[]).slice(0, MAX_RENDERED_ROWS);
     queue = songs;
     pc.innerHTML = `
       <div class="sp-page">
-        <h2 class="sp-page-title">Results for "${query}"</h2>
+        <h2 class="sp-page-title">Results for "${escapeHtml(query)}"</h2>
         <div class="sp-list">${songs.map((s, i) => renderListRow(s, i)).join("")}</div>
       </div>
     `;
@@ -225,14 +352,15 @@ async function loadBrowsePage(browseId: string) {
 
   try {
     const { title, items } = await getBrowseDetails(browseId);
-    queue = items;
+    queue = items.slice(0, MAX_QUEUE);
+    const renderedItems = items.slice(0, MAX_RENDERED_ROWS);
     pc.innerHTML = `
       <div class="sp-page">
         <div class="sp-page-header">
             <button id="btn-back" class="sp-ctrl-btn sp-back-btn" aria-label="Back"><span class="material-symbols-outlined">arrow_back</span></button>
-            <h2 class="sp-page-title">${title}</h2>
+            <h2 class="sp-page-title">${escapeHtml(title)}</h2>
         </div>
-        <div class="sp-list">${items.map((s, i) => renderListRow(s, i)).join("")}</div>
+        <div class="sp-list">${renderedItems.map((s, i) => renderListRow(s, i)).join("")}</div>
       </div>
     `;
     document.getElementById("btn-back")?.addEventListener("click", () => loadHomePage());
@@ -286,39 +414,42 @@ function bindEvents() {
 
   document.getElementById("btn-lyrics")!.addEventListener("click", toggleLyrics);
   document.getElementById("lyrics-close")!.addEventListener("click", toggleLyrics);
-  document.getElementById("btn-download")!.addEventListener("click", downloadCurrentSong);
 }
 
 function bindCardClicks() {
-  document.querySelectorAll(".st-card").forEach((el) => {
-    el.addEventListener("click", async () => {
-      const id = el.getAttribute("data-id") || "";
-      const type = el.getAttribute("data-type");
+  const pc = document.getElementById("page-content");
+  if (!pc) return;
+  pc.onclick = (event) => {
+    const el = (event.target as HTMLElement).closest(".st-card") as HTMLElement | null;
+    if (!el) return;
 
-      if (type === "song") {
-        const thumb = (el.querySelector("img") as HTMLImageElement)?.src || "";
-        const titleText = el.querySelector("h4, h5")?.textContent || "";
-        const subtitle = el.querySelector(".sp-card-sub, .sp-row-sub")?.textContent || "";
-        const song: SongItem = { id, title: titleText, artists: [{ name: subtitle }], thumbnail: thumb };
-        
-        const idx = queue.findIndex(q => q.id === song.id);
-        if (idx !== -1) {
-            queueIndex = idx;
-        } else {
-            queue = [song];
-            queueIndex = 0;
-        }
-        playSong(song);
+    const id = el.getAttribute("data-id") || "";
+    const type = el.getAttribute("data-type");
+
+    if (type === "song") {
+      const thumb = (el.querySelector("img") as HTMLImageElement)?.src || "";
+      const titleText = el.querySelector("h4, h5")?.textContent || "";
+      const subtitle = el.querySelector(".sp-card-sub, .sp-row-sub")?.textContent || "";
+      const song: SongItem = { id, title: titleText, artists: [{ name: subtitle }], thumbnail: thumb };
+
+      const idx = queue.findIndex(q => q.id === song.id);
+      if (idx !== -1) {
+          queueIndex = idx;
       } else {
-        loadBrowsePage(id);
+          queue = [song];
+          queueIndex = 0;
       }
-    });
-  });
+      void playSong(song);
+    } else {
+      void loadBrowsePage(id);
+    }
+  };
 }
 
 // ─── Player Methods ───
 async function playSong(song: SongItem) {
   currentSong = song;
+  showPlayer();
   updatePlayerUI();
   document.getElementById("st-player-title")!.textContent = `Loading...`;
 
@@ -336,36 +467,50 @@ async function playSong(song: SongItem) {
         } else if (state === STATE.PAUSED) {
           isPlaying = false;
           updatePlayButton();
+          stopProgressTracking();
         } else if (state === STATE.ENDED) {
           isPlaying = false;
           updatePlayButton();
+          stopProgressTracking();
           playNext();
         }
+      });
+
+      setOnError(() => {
+        isPlaying = false;
+        updatePlayButton();
+        stopProgressTracking();
       });
     }
 
     const vol = (document.getElementById("st-volume-slider") as HTMLInputElement)?.valueAsNumber || 80;
     setVolume(vol);
-    loadVideo(song.id);
-    setTimeout(() => loadLyrics(song), 1000);
+    await loadVideo(song.id);
+    saveListen(song);
+    prepareLyricsForSong();
+    if (lyricsOpen) void loadLyrics(song);
 
     if (queue.length <= 1) {
       getNext(song.id).then((items) => {
         if (items.length) {
-          queue = items;
+          queue = items.slice(0, MAX_QUEUE);
           queueIndex = queue.findIndex((s) => s.id === song.id);
           if (queueIndex === -1) { queue.unshift(song); queueIndex = 0; }
+          if (queue.length > MAX_QUEUE) queue.length = MAX_QUEUE;
         }
-      });
+      }).catch(() => {});
     } else {
       queueIndex = queue.findIndex((s) => s.id === song.id);
     }
-  } catch (e) {
-    console.error("Playback error:", e);
-    document.getElementById("st-player-title")!.textContent = `⚠ Error`;
+  } catch {
+    document.getElementById("st-player-title")!.textContent = `Playback unavailable`;
     isPlaying = false;
     updatePlayButton();
   }
+}
+
+function showPlayer() {
+  document.getElementById("sp-player")?.classList.remove("is-hidden");
 }
 
 function togglePlay() {
@@ -401,81 +546,58 @@ function updatePlayButton() {
   btn.innerHTML = isPlaying ? icons.pause : icons.play;
 }
 
+function stopProgressTracking() {
+  if (progressInterval) { clearInterval(progressInterval); progressInterval = null; }
+}
+
+// Cached DOM refs for progress tracker (avoid 4 lookups per 250ms)
+let _progCurEl: HTMLElement | null = null;
+let _progTotEl: HTMLElement | null = null;
+let _progFillEl: HTMLElement | null = null;
+
 function startProgressTracking() {
-  if (progressInterval) clearInterval(progressInterval);
+  stopProgressTracking();
+  // Cache DOM elements once
+  _progCurEl = document.getElementById("st-time-current");
+  _progTotEl = document.getElementById("st-time-total");
+  _progFillEl = document.getElementById("st-progress-fill");
+
   progressInterval = setInterval(() => {
     if (!ytPlayerReady) return;
     const cur = getCurrentTime();
     const dur = getDuration();
-    const curEl = document.getElementById("st-time-current");
-    const totEl = document.getElementById("st-time-total");
-    if (curEl) curEl.textContent = formatTime(cur);
-    if (totEl) totEl.textContent = formatTime(dur);
+    if (_progCurEl) _progCurEl.textContent = formatTime(cur);
+    if (_progTotEl) _progTotEl.textContent = formatTime(dur);
     
     const pct = dur > 0 ? (cur / dur) * 100 : 0;
-    const fill = document.getElementById("st-progress-fill");
-    if (fill) fill.style.width = `${pct}%`;
+    if (_progFillEl) _progFillEl.style.width = `${pct}%`;
 
     if (lyricsOpen && lyricsData?.synced && lyricsData.sentences) {
         updateActiveLyricLine(cur * 1000);
     }
-  }, 250);
-}
-
-// ─── Download ───
-async function downloadCurrentSong() {
-  if (!currentSong || isDownloading) return;
-  isDownloading = true;
-
-  const btn = document.getElementById("btn-download")!;
-  const originalHTML = btn.innerHTML;
-  btn.innerHTML = `<div class="dl-spinner"></div>`;
-  btn.classList.add("downloading");
-
-  try {
-    const fileName = `${currentSong.title} - ${currentSong.artists?.map(a => a.name).join(", ") || "Unknown"}`;
-    const dlUrl = await getDownloadUrl(currentSong.id);
-    // Append filename to the proxy URL
-    const fullUrl = dlUrl + `&name=${encodeURIComponent(fileName)}`;
-
-    const response = await fetch(fullUrl);
-    if (!response.ok) throw new Error(`Download failed: ${response.status}`);
-
-    const blob = await response.blob();
-    const blobUrl = URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-    a.href = blobUrl;
-    // Determine extension from content-type
-    const ct = response.headers.get("content-type") || "audio/mp4";
-    const ext = ct.includes("webm") ? "webm" : ct.includes("ogg") ? "ogg" : "m4a";
-    a.download = `${fileName}.${ext}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
-
-    // Brief success flash
-    btn.innerHTML = `<span class="material-symbols-outlined" style="color: #22c55e;">check_circle</span>`;
-    setTimeout(() => {
-      btn.innerHTML = originalHTML;
-      btn.classList.remove("downloading");
-    }, 1800);
-  } catch (e) {
-    console.error("Download error:", e);
-    btn.innerHTML = `<span class="material-symbols-outlined" style="color: #ef4444;">error</span>`;
-    setTimeout(() => {
-      btn.innerHTML = originalHTML;
-      btn.classList.remove("downloading");
-    }, 2000);
-  } finally {
-    isDownloading = false;
-  }
+  }, 500);
 }
 
 // ─── Lyrics ───
+function prepareLyricsForSong() {
+  if (lyricsData?.sentences) lyricsData.sentences.clear();
+  lyricsData = null;
+  _cachedLyricLines = null;
+  _lyricTimestamps = [];
+  _lastActiveLyricIdx = -1;
+
+  const body = document.getElementById("lyrics-body");
+  if (body) {
+    body.innerHTML = currentSong && lyricsOpen
+      ? `<div class="sp-loading"><div class="loading-spinner"></div></div>`
+      : `<div class="empty-state"><div class="empty-text">Open lyrics to load</div></div>`;
+  }
+}
+
 async function loadLyrics(song: SongItem) {
   const body = document.getElementById("lyrics-body")!;
+  if (!lyricsOpen) return;
+  prepareLyricsForSong();
   body.innerHTML = `<div class="sp-loading"><div class="loading-spinner"></div></div>`;
 
   const artist = song.artists?.[0]?.name || "";
@@ -489,32 +611,64 @@ async function loadLyrics(song: SongItem) {
 
   if (lyricsData.synced && lyricsData.sentences) {
     const entries = Array.from(lyricsData.sentences.entries()).sort((a, b) => a[0] - b[0]);
-    body.innerHTML = entries.map(([ts, text]) => `<div class="lyrics-line" data-ts="${ts}">${text || "♫"}</div>`).join("");
+    body.innerHTML = entries.map(([ts, text]) => `<div class="lyrics-line" data-ts="${ts}">${escapeHtml(text || "*")}</div>`).join("");
   } else {
-    body.innerHTML = lyricsData.text.split("\n").map((line) => `<div class="lyrics-line">${line || "&nbsp;"}</div>`).join("");
+    body.innerHTML = lyricsData.text.split("\n").map((line) => `<div class="lyrics-line">${line ? escapeHtml(line) : "&nbsp;"}</div>`).join("");
   }
+  _cachedLyricLines = null; // force re-cache on next sync
 }
 
+// Cache lyric line elements to avoid querySelectorAll every 250ms
+let _cachedLyricLines: NodeListOf<Element> | null = null;
+let _lyricTimestamps: number[] = [];
+let _lastActiveLyricIdx = -1;
+
 function updateActiveLyricLine(currentMs: number) {
-  const lines = document.querySelectorAll(".lyrics-line[data-ts]");
-  let activeEl: Element | null = null;
-  lines.forEach((el) => {
-    const ts = Number(el.getAttribute("data-ts"));
-    if (ts <= currentMs) activeEl = el;
-    el.classList.remove("text-primary", "text-xl", "opacity-100");
-    el.classList.add("text-on-surface-variant", "opacity-50");
-  });
-  if (activeEl) {
-    (activeEl as HTMLElement).classList.remove("text-on-surface-variant", "opacity-50");
-    (activeEl as HTMLElement).classList.add("text-primary", "text-xl", "opacity-100");
-    (activeEl as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
+  if (!_cachedLyricLines) {
+    _cachedLyricLines = document.querySelectorAll(".lyrics-line[data-ts]");
+    _lyricTimestamps = Array.from(_cachedLyricLines, (line) => Number(line.getAttribute("data-ts")) || 0);
+    _lastActiveLyricIdx = -1;
   }
+  const lines = _cachedLyricLines;
+  if (!lines.length) return;
+
+  let newActive = -1;
+  let low = 0;
+  let high = _lyricTimestamps.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (_lyricTimestamps[mid] <= currentMs) {
+      newActive = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  // Only update DOM if the active line changed
+  if (newActive === _lastActiveLyricIdx) return;
+
+  // Remove highlight from old active
+  if (_lastActiveLyricIdx >= 0 && _lastActiveLyricIdx < lines.length) {
+    const old = lines[_lastActiveLyricIdx] as HTMLElement;
+    old.classList.remove("text-primary", "text-xl", "opacity-100");
+    old.classList.add("text-on-surface-variant", "opacity-50");
+  }
+  // Add highlight to new active
+  if (newActive >= 0) {
+    const el = lines[newActive] as HTMLElement;
+    el.classList.remove("text-on-surface-variant", "opacity-50");
+    el.classList.add("text-primary", "text-xl", "opacity-100");
+    el.scrollIntoView({ behavior: "auto", block: "center" });
+  }
+  _lastActiveLyricIdx = newActive;
 }
 
 function toggleLyrics() {
   lyricsOpen = !lyricsOpen;
   document.getElementById("lyrics-panel")!.classList.toggle("open", lyricsOpen);
   document.getElementById("btn-lyrics")!.classList.toggle("text-primary", lyricsOpen);
+  if (lyricsOpen && currentSong && !lyricsData) void loadLyrics(currentSong);
 }
 
 // Kickoff
