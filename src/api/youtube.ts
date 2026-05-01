@@ -319,10 +319,10 @@ async function tryYTPlayer(videoId: string, clientConfig: {
     ];
     // Prefer audio-only format with direct URL (no signatureCipher)
     const audio = pickLeanAudioFormat(formats.filter((f: any) => f.mimeType?.startsWith('audio/')));
-    if (audio?.url) return audio.url;
+    if (audio?.url) return proxyStreamUrl(audio.url);
     // Any format with direct URL
     const anyDirect = formats.find((f: any) => f.url);
-    if (anyDirect?.url) return anyDirect.url;
+    if (anyDirect?.url) return proxyStreamUrl(anyDirect.url);
     return null;
   } catch {
     return null;
