@@ -197,8 +197,11 @@ function invidiousProxy(): Plugin {
           }
         }
 
-        res.writeHead(502);
-        res.end('All proxy instances failed');
+        res.writeHead(502, {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        });
+        res.end(JSON.stringify({ error: 'upstream_unavailable' }));
       });
     },
   };

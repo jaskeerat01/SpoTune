@@ -21,3 +21,9 @@
 [[edge_functions]]
   path = "/dl-proxy"
   function = "api-proxy"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Permissions-Policy = "accelerometer=(), autoplay=(), clipboard-write=(), encrypted-media=(), gyroscope=(), picture-in-picture=()"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; frame-src https://www.youtube-nocookie.com; connect-src 'self' https://music.youtube.com https://www.googleapis.com https://invidious.io https://lrclib.net; img-src 'self' data: https://i.ytimg.com https://yt3.ggpht.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; media-src 'self' blob:; worker-src blob:;"

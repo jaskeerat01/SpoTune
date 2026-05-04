@@ -32,6 +32,7 @@ declare namespace YT {
     height?: string | number;
     width?: string | number;
     videoId?: string;
+    host?: string;
     playerVars?: Record<string, unknown>;
     events?: {
       onReady?: (event: { target: Player }) => void;
@@ -105,9 +106,12 @@ async function ensureIframePlayer(): Promise<void> {
     }
 
     const createPlayer = () => {
+      // NOTE: YouTube's iframe internals may log a benign data: URI CORS warning
+      // and Firefox unreachable-code warnings from minified YouTube bundles.
       player = new window.YT.Player('yt-hidden-player', {
         height: '1',
         width: '1',
+        host: 'https://www.youtube-nocookie.com',
         playerVars: {
           autoplay: 0,
           controls: 0,

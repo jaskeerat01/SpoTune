@@ -238,43 +238,45 @@ function proxyStreamUrl(url: string): string {
   return `/audiostream?url=${encodeURIComponent(url)}`;
 }
 
+async function fetchProxyJson(path: string, timeoutMs: number): Promise<any | null> {
+  try {
+    const res = await fetch(path, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 async function tryProxyInstances(videoId: string): Promise<string | null> {
   // Try Piped API format first
-  try {
-    const res = await fetch(`/yt-proxy/streams/${videoId}`, {
-      signal: AbortSignal.timeout(12000),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      // Piped format: audioStreams
-      const audioStreams = data?.audioStreams || [];
-      if (audioStreams.length) {
-        const pick = pickLeanAudioFormat(audioStreams);
-        if (pick?.url) return proxyStreamUrl(pick.url);
-      }
-      if (data?.hls) return proxyStreamUrl(data.hls);
+  const pipedData = await fetchProxyJson(`/yt-proxy/streams/${videoId}`, 12000);
+  if (pipedData) {
+    // Piped format: audioStreams
+    const audioStreams = pipedData?.audioStreams || [];
+    if (audioStreams.length) {
+      const pick = pickLeanAudioFormat(audioStreams);
+      if (pick?.url) return proxyStreamUrl(pick.url);
     }
-  } catch { /* try next */ }
+    if (pipedData?.hls) return proxyStreamUrl(pipedData.hls);
+  }
 
   // Try Invidious API format
-  try {
-    const res = await fetch(`/yt-proxy/api/v1/videos/${videoId}`, {
-      signal: AbortSignal.timeout(12000),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      // Invidious format: adaptiveFormats
-      const formats = data?.adaptiveFormats || [];
-      const audioFormats = formats.filter((f: any) => f.type?.startsWith('audio/'));
-      if (audioFormats.length) {
-        const best = pickLeanAudioFormat(audioFormats);
-        if (best?.url) return proxyStreamUrl(best.url);
-      }
-      // Fallback to any format with url
-      const withUrl = formats.find((f: any) => f.url);
-      if (withUrl?.url) return proxyStreamUrl(withUrl.url);
+  const invidiousData = await fetchProxyJson(`/yt-proxy/api/v1/videos/${videoId}`, 12000);
+  if (invidiousData) {
+    // Invidious format: adaptiveFormats
+    const formats = invidiousData?.adaptiveFormats || [];
+    const audioFormats = formats.filter((f: any) => f.type?.startsWith('audio/'));
+    if (audioFormats.length) {
+      const best = pickLeanAudioFormat(audioFormats);
+      if (best?.url) return proxyStreamUrl(best.url);
     }
-  } catch { /* unavailable */ }
+    // Fallback to any format with url
+    const withUrl = formats.find((f: any) => f.url);
+    if (withUrl?.url) return proxyStreamUrl(withUrl.url);
+  }
 
   return null;
 }
@@ -365,39 +367,33 @@ export async function getDownloadUrl(videoId: string): Promise<string> {
   const TARGET_BITRATE = 128000; // 128kbps
 
   // Try Piped API
-  try {
-    const res = await fetch(`/yt-proxy/streams/${videoId}`, { signal: AbortSignal.timeout(12000) });
-    if (res.ok) {
-      const data = await res.json();
-      const audioStreams = data?.audioStreams || [];
-      if (audioStreams.length) {
-        // Find the stream closest to 128kbps
-        const sorted = [...audioStreams]
-          .filter((s: any) => s.url && s.mimeType?.includes('audio'))
-          .sort((a: any, b: any) =>
-            Math.abs((a.bitrate || 0) - TARGET_BITRATE) - Math.abs((b.bitrate || 0) - TARGET_BITRATE)
-          );
-        const pick = sorted[0];
-        if (pick?.url) return `/dl-proxy?url=${encodeURIComponent(pick.url)}`;
-      }
-    }
-  } catch { /* try next */ }
-
-  // Try Invidious API
-  try {
-    const res = await fetch(`/yt-proxy/api/v1/videos/${videoId}`, { signal: AbortSignal.timeout(12000) });
-    if (res.ok) {
-      const data = await res.json();
-      const formats = data?.adaptiveFormats || [];
-      const audioFormats = formats.filter((f: any) => f.type?.startsWith('audio/') && f.url);
-      if (audioFormats.length) {
-        const sorted = [...audioFormats].sort((a: any, b: any) =>
+  const pipedData = await fetchProxyJson(`/yt-proxy/streams/${videoId}`, 12000);
+  if (pipedData) {
+    const audioStreams = pipedData?.audioStreams || [];
+    if (audioStreams.length) {
+      // Find the stream closest to 128kbps
+      const sorted = [...audioStreams]
+        .filter((s: any) => s.url && s.mimeType?.includes('audio'))
+        .sort((a: any, b: any) =>
           Math.abs((a.bitrate || 0) - TARGET_BITRATE) - Math.abs((b.bitrate || 0) - TARGET_BITRATE)
         );
-        if (sorted[0]?.url) return `/dl-proxy?url=${encodeURIComponent(sorted[0].url)}`;
-      }
+      const pick = sorted[0];
+      if (pick?.url) return `/dl-proxy?url=${encodeURIComponent(pick.url)}`;
     }
-  } catch { /* unavailable */ }
+  }
+
+  // Try Invidious API
+  const invidiousData = await fetchProxyJson(`/yt-proxy/api/v1/videos/${videoId}`, 12000);
+  if (invidiousData) {
+    const formats = invidiousData?.adaptiveFormats || [];
+    const audioFormats = formats.filter((f: any) => f.type?.startsWith('audio/') && f.url);
+    if (audioFormats.length) {
+      const sorted = [...audioFormats].sort((a: any, b: any) =>
+        Math.abs((a.bitrate || 0) - TARGET_BITRATE) - Math.abs((b.bitrate || 0) - TARGET_BITRATE)
+      );
+      if (sorted[0]?.url) return `/dl-proxy?url=${encodeURIComponent(sorted[0].url)}`;
+    }
+  }
 
   throw new Error('No download URL available');
 }

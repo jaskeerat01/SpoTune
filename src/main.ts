@@ -6,6 +6,7 @@ import {
   getBrowseDetails,
 } from "./api/youtube";
 import { getLyrics } from "./api/lyrics";
+import { addToHistory, getHistory, type HistoryEntry } from "./api/db";
 import {
   initYTPlayer,
   loadVideo,
@@ -31,6 +32,7 @@ let lyricsData: LyricsResult | null = null;
 let lyricsOpen = false;
 let searchDebounce: ReturnType<typeof setTimeout> | null = null;
 let progressInterval: ReturnType<typeof setInterval> | null = null;
+let historyRecordedForSongId = "";
 
 const MAX_QUEUE = 50; // cap queue to limit memory
 const MAX_RENDERED_ROWS = 80;
@@ -63,7 +65,6 @@ const icons = {
 };
 
 // ─── Listen History ───
-const LISTEN_HISTORY_KEY = "st_listen_history";
 const MAX_LISTEN_HISTORY = 40;
 
 type ListenHistoryItem = {
@@ -74,19 +75,20 @@ type ListenHistoryItem = {
   playedAt: number;
 };
 
-function getListenHistory(): ListenHistoryItem[] {
+async function getListenHistory(): Promise<ListenHistoryItem[]> {
   try {
-    const parsed = JSON.parse(localStorage.getItem(LISTEN_HISTORY_KEY) || "[]");
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((item): item is ListenHistoryItem =>
-        item &&
-        typeof item.id === "string" &&
-        typeof item.title === "string" &&
-        typeof item.artist === "string" &&
-        typeof item.playedAt === "number"
-      )
-      .slice(0, MAX_LISTEN_HISTORY);
+    const entries = await getHistory(MAX_LISTEN_HISTORY);
+    const deduped = new Map<string, HistoryEntry>();
+    for (const entry of entries) {
+      if (!deduped.has(entry.videoId)) deduped.set(entry.videoId, entry);
+    }
+    return Array.from(deduped.values()).map((entry) => ({
+      id: entry.videoId,
+      title: entry.title,
+      artist: entry.artist || "",
+      thumbnail: entry.thumbnail || "",
+      playedAt: entry.listenedAt,
+    }));
   } catch {
     return [];
   }
@@ -94,18 +96,14 @@ function getListenHistory(): ListenHistoryItem[] {
 
 function saveListen(song: SongItem) {
   const artist = song.artists?.map((a) => a.name).filter(Boolean).join(", ") || "";
-  const item: ListenHistoryItem = {
-    id: song.id,
+  addToHistory({
+    videoId: song.id,
     title: song.title,
     artist,
     thumbnail: song.thumbnail,
-    playedAt: Date.now(),
-  };
-
-  const history = getListenHistory().filter((entry) => entry.id !== item.id);
-  history.unshift(item);
-  if (history.length > MAX_LISTEN_HISTORY) history.length = MAX_LISTEN_HISTORY;
-  localStorage.setItem(LISTEN_HISTORY_KEY, JSON.stringify(history));
+    durationSeconds: song.duration,
+    listenedAt: Date.now(),
+  }).catch(console.error);
 }
 
 /** Pick N random unique items from an array */
@@ -115,7 +113,7 @@ function pickRandom<T>(arr: T[], n: number): T[] {
 }
 
 async function getRecommendedSections(): Promise<HomeSection[]> {
-  const history = getListenHistory();
+  const history = await getListenHistory();
   if (!history.length) {
     // New user fallback: generic suggestions
     const items = await search("top hits 2026").catch(() => []);
@@ -461,6 +459,10 @@ async function playSong(song: SongItem) {
       setOnStateChange((state) => {
         if (state === STATE.PLAYING) {
           isPlaying = true;
+          if (currentSong && historyRecordedForSongId !== currentSong.id) {
+            historyRecordedForSongId = currentSong.id;
+            saveListen(currentSong);
+          }
           updatePlayButton();
           updatePlayerUI();
           startProgressTracking();
@@ -485,8 +487,8 @@ async function playSong(song: SongItem) {
 
     const vol = (document.getElementById("st-volume-slider") as HTMLInputElement)?.valueAsNumber || 80;
     setVolume(vol);
+    historyRecordedForSongId = "";
     await loadVideo(song.id);
-    saveListen(song);
     prepareLyricsForSong();
     if (lyricsOpen) void loadLyrics(song);
 
