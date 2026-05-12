@@ -93,12 +93,19 @@ export default async (request: Request, context: Context) => {
             });
             return clonedResponse;
           }
+          console.warn('[yt-proxy] upstream failed', res.status, targetUrl);
         } catch {
           // ignore error and try next instance
         }
       }
       
-      return new Response('All proxy instances failed', { status: 502 });
+      return new Response(JSON.stringify({ error: 'upstream_unavailable' }), {
+        status: 502,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
     }
 
     // Audio stream proxy: keeps playback in an <audio> element instead of a video iframe.
